@@ -38,6 +38,14 @@ parser.add_option("-b", "--baselines", action="store",
 parser.add_option("--bitstream", action="store",
                   dest="bitstream", default="bee2_calib_corr.bof",
                   help="use BITSTREAM instead of default", metavar="BITSTREAM")
+parser.add_option("--bee2-host", action="store",
+                  dest="bee2_host", default="b02.ata.pvt",
+                  help="connect to a BEE2 on BEE2-HOST (defaults to b02.ata.pvt)",
+                  metavar="BEE2-HOST")
+parser.add_option("--bee2-port", action="store",
+                  dest="bee2_port", type="int", default=7147,
+                  help="use 'tcpborphserver' on port BEE2-PORT (default 7147)",
+                  metavar="BEE2-PORT")
 (options, args) = parser.parse_args()
 
 if not options.verbose:
@@ -63,7 +71,8 @@ if options.logfile:
 
 HOST, PORT = options.host, options.port
 server = SubmillimeterArrayTCPServer((HOST, PORT), include_baselines=options.include_baselines,
-                                     initial_int_time=1, bee2_host='b02.ata.pvt', bee2_port=7147,
+                                     initial_int_time=1, bee2_host=options.bee2_host,
+                                     bee2_port=options.bee2_port,
                                      correlator_bitstream=options.bitstream)
 ip, port = server.server_address
 
