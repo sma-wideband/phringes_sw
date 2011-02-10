@@ -4,6 +4,7 @@ Logging decorators
 
 
 import logging
+from functools import wraps
 
 
 class log:
@@ -16,6 +17,7 @@ class log:
         level = self.level
         method_name = method.func_name
 
+        @wraps(method)
         def wrapped(self, *args, **kwargs):
             try:
                 logger = self.logger
