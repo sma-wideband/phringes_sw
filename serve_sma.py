@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-A simulator for the PHRINGES phased-array system
+A TCP server for the PHRINGES phased-array system
     created by Rurik Primiani 03/04/2010
 """
 
@@ -36,10 +36,10 @@ parser.add_option("-b", "--baselines", action="store",
                   "be antenna numbers or the wildcard *. So 4-* means all baselines to "
                   "antenna 4", metavar="BASELINES")
 parser.add_option("--bitstream", action="store",
-                  dest="bitstream", default="bee2_calib_corr.bof",
+                  dest="bitstream", default="bee2_complex_corr.bof",
                   help="use BITSTREAM instead of default", metavar="BITSTREAM")
 parser.add_option("--bee2-host", action="store",
-                  dest="bee2_host", default="b02.ata.pvt",
+                  dest="bee2_host", default="0.0.0.0",
                   help="connect to a BEE2 on BEE2-HOST (defaults to b02.ata.pvt)",
                   metavar="BEE2-HOST")
 parser.add_option("--bee2-port", action="store",
@@ -47,6 +47,7 @@ parser.add_option("--bee2-port", action="store",
                   help="use 'tcpborphserver' on port BEE2-PORT (default 7147)",
                   metavar="BEE2-PORT")
 (options, args) = parser.parse_args()
+
 
 if not options.verbose:
     LEVEL = logging.ERROR
