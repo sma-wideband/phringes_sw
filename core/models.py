@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
 
-import logging
-
 from numpy import pi, around, arange, sinc, resize, insert, dot, hamming, sqrt
 from numpy.random import normal
+
+from core.loggers import (
+    debug, info, warning,
+    error, critical,
+)
 
 
 __all__ = ['Model',
@@ -14,6 +17,7 @@ __all__ = ['Model',
 
 class Model:
 
+    @debug
     def __init__(self, server):
         self.server = server
         self._delay = dict((b, self._delay_generator(b)) 
@@ -21,32 +25,37 @@ class Model:
         self._phase = dict((b, self._phase_generator(b)) 
                            for b in self.server._include_baselines)
 
+    @debug
     def _delay_generator(self, baseline):
         while True: yield 0.0
 
+    @debug
     def _phase_generator(self, baseline):
         while True: yield 0.0
 
+    @debug
     def delay(self, baseline):
         return self._delay[baseline].next()
 
+    @debug
     def phase(self, baseline):
         return self._phase[baseline].next()
 
 
 class GeometricModel(Model):
 
+    @debug
     def __init__(self, server):
-        self.logger = logging.getLogger('GeometricModel')
         Model.__init__(self, server)
 
     
 class AtmosphericModel(Model):
-    
+
+    @debug
     def __init__(self, server):
-        self.logger = logging.getLogger('AtmosphericModel')
         Model.__init__(self, server)
 
+    @debug
     def _phase_generator(self, baseline, B=1/64.):
         edge = round(16./B)
         self.t = arange(-edge, 1+edge)

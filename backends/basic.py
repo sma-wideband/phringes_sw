@@ -11,9 +11,7 @@ own local interfaces
 """
 
 
-import logging
-
-from math import sqrt, pi
+from math import pi
 from time import time, sleep
 from binhex import binascii as b2a
 from struct import Struct, pack, unpack, calcsize
@@ -21,17 +19,11 @@ from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, SOL_SOCKET, SO_REUS
 from SocketServer import ThreadingTCPServer, BaseRequestHandler
 from threading import Thread, RLock, Event
 
-try:
-    from numpy.fft import ifft
-    from numpy.random import normal
-    from numpy import array, arange, ones, mean, sin, cos, concatenate
-except ImportError:
-    logging.error("""Numpy package required but not installed!
-    Please install python-numpy >= 1.4.1""")
-    exit()
-
-from core.models import GeometricModel, AtmosphericModel
 from core.macros import parse_includes
+from core.loggers import (
+    debug, info, warning, 
+    critical, error,
+)
 
 
 __all__ = [ 'K', 'BYTE', 'SBYTE', 'FLOAT',
@@ -54,12 +46,11 @@ class BasicCorrelationProvider:
     from a BasicTCPServer instance and sends out one UDP
     data packet per baseline to a list of subscribers."""
 
+    @debug
     def __init__(self, server, include_baselines, lags=32):
         """ BasicCorrelationProvider(server, include, lags=32) -> inst
         Returns an instance and requires a BasicTCPServer as the
         first argument."""
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug('__init__')
         self.server = server
         self.subscribers = set()
         self._stopevent = Event()
@@ -68,27 +59,28 @@ class BasicCorrelationProvider:
         self._include_baselines = include_baselines
         self._DATA_PKT = Struct('!fBB%di'%self._lags)
 
+    @debug
     def is_subscriber(self, address):
         """ inst.is_subscriber(address) -> bool
         Checks if the given address is a subscriber."""
-        self.logger.debug('is_subscriber(%s:%d)'%address)
         return address in self.subscribers
     
+    @info
     def add_subscriber(self, address):
         """ inst.add_subscriber(address) -> None
         Adds the given address to the list of subscribers. This means
         that UDP data packets will be sent there once the correlator
         is started."""
-        self.logger.debug('add_subscriber(%s:%d)'%address)
         self.subscribers.add(address)
 
+    @info
     def remove_subscriber(self, address):
         """ inst.remove_subscriber(address) -> None
         Removes the given address from the list of subscribers; i.e.
         it will no longer be sent UDP data packets."""
-        self.logger.debug('remove_subscriber(%s:%d)'%address)
         self.subscribers.remove(address)
 
+    @debug
     def _provider_loop(self):
         """ Started in a separate thread by inst.start() and runs 
         until inst._stopevent is set by inst.stop(). It can be
@@ -99,7 +91,6 @@ class BasicCorrelationProvider:
         subscribers via inst.broadcast(), and the waits until the next
         appropriate time to correlate given an integration time.
         """
-        self.logger.debug('_provider_loop()')
         self._start_time = time()
         last_correlation = self._start_time
         while not self._stopevent.isSet():
@@ -113,21 +104,21 @@ class BasicCorrelationProvider:
                       and not self._stopevent.isSet():
                 sleep(0.1)
 
+    @debug
     def correlate(self):
         """ inst.correlate() -> None
         This must be overloaded to populate the '_correlations'
         member dictionary with valid correlation functions for 
         every included (i.e. tracked) basline.
         """
-        self.logger.debug('correlate()')
         for baseline in self._include_baselines:
             self._correlations[baseline] = [0]*self._lags
 
+    @debug
     def broadcast(self):
         """ inst.broadcast() -> None
         Constructs UDP packets and sends one packet per baseline per
         subscriber."""
-        self.logger.debug('broadcast()')
         for baseline, correlation in self._correlations.iteritems():
             data = self._DATA_PKT.pack(self._last_correlation,
                                        baseline[0], baseline[1],
@@ -135,21 +126,22 @@ class BasicCorrelationProvider:
             for subscriber in self.subscribers:
                 udp_sock = socket(AF_INET, SOCK_DGRAM)
                 udp_sock.sendto(data, subscriber)
+                udp_sock.close()
 
+    @info
     def start(self):
         """ inst.start() -> None
         Starts inst._provider_loop() in a separate thread. Use inst.stop()
         to kill that thread. Can be used repeatedly to restart the provider
         loop."""
-        self.logger.debug('start()')
         self._stopevent.clear()
         self._loop_thread = Thread(target=self._provider_loop)
         self._loop_thread.start()
 
+    @info
     def stop(self):
         """ inst.stop() -> None
         Stops the provider loop by setting inst._stopevent."""
-        self.logger.debug('stop()')
         self._stopevent.set()
         self._loop_thread.join()
 
@@ -159,13 +151,13 @@ class BasicRequestHandler(BaseRequestHandler):
     the given 'server' given that class's command set, and then sends
     the appropriate responses."""
 
+    @debug
     def __init__(self, request, client_address, server):
         """ BasicRequestHandler(request, client_address, server) -> inst
         Returns an instance of BasicRequestHandler."""
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug('__init__')
         BaseRequestHandler.__init__(self, request, client_address, server)
 
+    @debug
     def handle(self):
         """ inst.handle() -> None
         Handles a specific request by finding the appropropriate member
@@ -173,7 +165,6 @@ class BasicRequestHandler(BaseRequestHandler):
         _command_set member with the first byte of the request as the command word,
         and the rest of the request is passed as the arguments. The return value
         of the method is then sent back over TCP."""
-        self.logger.debug('handle')
         request = self.request.recv(MAX_REQUEST_SIZE)#.rstrip('\n')
         if request:
             self.logger.debug('request of size %d (%s)'%(len(request), b2a.hexlify(request[:8])))
@@ -201,6 +192,7 @@ class BasicTCPServer(ThreadingTCPServer):
     Note: see 'backend.simulator' for an example on how to subclass
     this class."""
 
+    @debug
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BasicCorrelationProvider,
                  correlator_lags=32, n_antennas=8, 
@@ -248,8 +240,6 @@ class BasicTCPServer(ThreadingTCPServer):
         Commands 32-127 are reserved for adjusting feedback parameters.
         Commands 128-254 are reserved for user specific methods
         Command 255 is reserved for shutting down the server."""
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug('__init__')
         self._command_set = { 0 : self.subscribe,
                               1 : self.unsubscribe,
                               8 : self.start_correlator,
@@ -276,20 +266,21 @@ class BasicTCPServer(ThreadingTCPServer):
         self._delay_offsets = dict((i, 0.0) for i in range(self._n_antennas))
         ThreadingTCPServer.__init__(self, address, handler)
 
+    @info
     def server_bind(self):
         """ Overloaded method to allow address reuse."""
         self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         self.socket.bind(self.server_address)
 
+    @info
     def shutdown(self, args):
         """ Overloaded method that kills the correlator before shutdown."""
-        self.logger.debug('shutdown()')
-        self.logger.info('shutting down the server...')
         if self._started:
             self.stop_correlator('')
         ThreadingTCPServer.shutdown(self)
         return SBYTE.pack(0)
 
+    @debug
     def subscribe(self, args):
         """ inst.subscribe(address=(ip, port)) -> err_code
         This function will add the given address to the list of subscribers
@@ -311,7 +302,6 @@ class BasicTCPServer(ThreadingTCPServer):
         0  = subscriber was successfully added
         -1 = the given address is already in the list of subscribers
         -2 = an incorrect number of arguments was received"""
-        self.logger.debug('subscribe(%d)'%len(args))
         if len(args) == 6:
             ip = '.'.join([str(i) for i in unpack('!4B', args[:4])])
             port = unpack('!H', args[4:6])[0]
@@ -325,6 +315,7 @@ class BasicTCPServer(ThreadingTCPServer):
         self.logger.error('incorrect number of arguments')
         return SBYTE.pack(-2)
 
+    @debug
     def unsubscribe(self, args):
         """ inst.unsubscribe(address=(ip, port)) -> err_code
         Same argument format as inst.subscribe but removes the given address
@@ -333,7 +324,6 @@ class BasicTCPServer(ThreadingTCPServer):
         0  = subscriber was successfully removed
         -1 = the given address is not in the list of subscribers
         -2 = an incorrect number of arguments was received"""
-        self.logger.debug('subscribe(%d)'%len(args))
         if len(args) == 6:
             ip = '.'.join([str(i) for i in unpack('!4B', args[:4])])
             port = unpack('!H', args[4:6])[0]
@@ -347,6 +337,7 @@ class BasicTCPServer(ThreadingTCPServer):
         self.logger.error('incorrect number of arguments')
         return SBYTE.pack(-2)
         
+    @debug
     def start_correlator(self, args):
         """ inst.start_correlator() -> err_code
         Starts the correlator (see BasicCorrelationProvider.start)
@@ -356,7 +347,6 @@ class BasicTCPServer(ThreadingTCPServer):
         the following scenarios:
         0  = correlator started successfully
         -1 = correlator has already been started"""
-        self.logger.debug('start_correlator(%d)'%len(args))
         if not self._started:
             self._correlator.start()
             self._started = True
@@ -365,6 +355,7 @@ class BasicTCPServer(ThreadingTCPServer):
         self.logger.warning('correlator already started!')
         return SBYTE.pack(-1)
         
+    @debug
     def stop_correlator(self, args):
         """ inst.stop_corrlator() -> err_code
         Stops the correlator (see BasicCorrelationProvider.stop)
@@ -374,7 +365,6 @@ class BasicTCPServer(ThreadingTCPServer):
         The return packet will contain the following error packets:
         0  = correlator stopped successfully
         -1 = correlator is not currently running"""
-        self.logger.debug('stop_correlator()')
         if self._started:
             self._correlator.stop()
             self._started = False
@@ -383,26 +373,25 @@ class BasicTCPServer(ThreadingTCPServer):
         self.logger.warning('correlator has not been started!')
         return SBYTE.pack(-1)
 
+    @info
     def get_integration_time(self, args):
         """ inst.get_integration_time() -> err_code
         Accepts no arguments (but for safety include a padding null byte in the
         request packet) and returns the current integration time. The return packet
         will have an error code of 0 following by an unsigned byte representing
         the current integration time."""
-        self.logger.debug('get_integration_time()')
-        self.logger.info('integration time requested, currently %d sec'\
-                         %self._integration_time)
         return pack('!bB', 0, self._integration_time)
 
+    @info
     def set_integration_time(self, args):
         """ inst.set_integration_time(time) -> err_code
         This accepts a single unsigned byte representing the requested integration
         time and for right now always returns an error code of 0 meaning that the
         correlator integration time was set successfully."""
         self._integration_time = BYTE.unpack(args[0])[0]
-        self.logger.debug('set_integration_time(%d)' %self._integration_time)
         return SBYTE.pack(0)
 
+    @info
     def get_values(self, name, args, type='f'):
         """ inst.get_values(value_name, args, type='f')
         This method is not exposed over TCP but instead processes the variable length
@@ -426,10 +415,11 @@ class BasicTCPServer(ThreadingTCPServer):
         if err_code != 0:
             self.logger.error('following antennas not in the system: %s'%errors)
             return pack('!b%dB'%len(errors), err_code, *errors)
-        self.logger.info('%s requested for antennas %s'%(name, list(antennas)))
-        self.logger.info('%s currently %s'%(name, param))
+        #self.logger.info('%s requested for antennas %s'%(name, list(antennas)))
+        #self.logger.info('%s currently %s'%(name, param))
         return pack('!b%d%s'%(len(values), type), err_code, *values)
 
+    @info
     def set_values(self, name, args, type='f'):
         """ inst.set_values(value_name, args, type='f')
         This method is not exposed over TCP but instead processes the variable length
@@ -452,12 +442,13 @@ class BasicTCPServer(ThreadingTCPServer):
                 self.logger.error('following antennas not in the system: %s'%errors)
                 return pack('!b%dB'%len(errors), err_code, *errors)
             param.update(values)
-            self.logger.info('%s updated for antennas %s'%(name, list(values.keys())))
-            self.logger.info('%s currently %s'%(name, param))
+            #self.logger.info('%s updated for antennas %s'%(name, list(values.keys())))
+            #self.logger.info('%s currently %s'%(name, param))
             return pack('!b%d%s'%(len(values), type), err_code, *values)
         self.logger.error('unmatched antenna/value pairs!')
         return SBYTE.pack(-2)
     
+    @info
     def get_phase_offsets(self, args):
         """ inst.get_phase_offsets(antennas=[1,2,3,...]) -> values=[0.0,0.0,0.0,...]
         Returns the phase offsets for the given set of antennas, an empty set implies
@@ -479,9 +470,9 @@ class BasicTCPServer(ThreadingTCPServer):
         This means the request packet will have a size of 1+N bytes, where N is the
         size of the given set of antennas, and the response packet will have a size of
         1+4*N since a float is 4 bytes."""
-        self.logger.debug('get_phase_offsets(%d)'%len(args))
         return self.get_values('phase_offsets', args, type='f')
 
+    @info
     def set_phase_offsets(self, args):
         """ inst.set_phase_offsets(ant_val=[1,0.0,2,0.0,3,0.0...]) -> values=[0.0,0.0,0.0,...]
         Sets the phase offsets for the given set of antennas using the given set of
@@ -497,19 +488,18 @@ class BasicTCPServer(ThreadingTCPServer):
         not in the system. Note: if the number of antennas given does not match the number
         of values provided, or if the arguments are not formatted as required above, then
         the return packet will consist solely of an error_code of SByte(-2)."""
-        self.logger.debug('set_phase_offsets(%d)'%len(args))
         return self.set_values('phase_offsets', args, type='f')
 
+    @info
     def get_delay_offsets(self, args):
         """ inst.get_delay_offsets(antennas=[1,2,3,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase' with 'delay'"""
-        self.logger.debug('get_delay_offsets')
         return self.get_values('delay_offsets', args, type='f')
 
+    @info
     def set_delay_offsets(self, args):
         """ inst.set_delay_offsets(ant_val=[1,0.0,2,0.0,3,0.0,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase' with 'delay'"""
-        self.logger.debug('set_delay_offsets')
         return self.set_values('delay_offsets', args, type='f')
     
 

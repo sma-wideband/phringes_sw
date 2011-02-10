@@ -7,8 +7,6 @@ A simulator for the PHRINGES phased-array system
 """
 
 
-import logging
-
 from math import sqrt, pi
 from time import time, sleep
 from binhex import binascii as b2a
@@ -23,22 +21,27 @@ except ImportError:
     Please install python-numpy >= 1.4.1""")
     exit()
 
-from backends.basic import *
 from core.models import GeometricModel, AtmosphericModel
 from core.macros import parse_includes
+from backends.basic import (
+    BasicCorrelationProvider,
+    BasicRequestHandler,
+    BasicTCPServer,
+    MAX_REQUEST_SIZE,
 
-
-MAX_REQUEST_SIZE = 1024 # bytes
+    debug, info, warning, # actually imported
+    critical, error,      # from core.loggers
+)
 
 
 class SimulatorCorrelationProvider(BasicCorrelationProvider):
 
+    @debug
     def correlate(self):
         """ inst.correlate() -> None
         Uses parameters extracted from an instance of SimulatorTCPServer
         to mimic the output of the PHRINGES hardware-based correlator. It
         stores its output in appropriate instance members."""
-        self.logger.debug('correlate()')
         antenna_temp = self.server._antenna_efficiency * self.server._source_flux
         for baseline in self._include_baselines:
             # For an unresolved source all baselines see the same
@@ -82,6 +85,7 @@ class SimulatorCorrelationProvider(BasicCorrelationProvider):
 
 class SimulatorTCPServer(BasicTCPServer):
     
+    @debug
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BasicCorrelationProvider,
                  n_antennas=8, correlator_lags=32, 
@@ -120,17 +124,18 @@ class SimulatorTCPServer(BasicTCPServer):
         self._geometry = GeometricModel(self)
         self._correlator = correlator(self, self._include_baselines, correlator_lags)
         
+    @info
     def get_source_flux(self, args):
         """ inst.get_source_flux() -> err_code
         Accepts no arguments (but for safety include a padding null byte in the
         request packet) and returns the current source flux density in Jansky's.
         The return packet will have an error code of 0 following by an unsigned byte
         representing the current integration time."""
-        self.logger.debug('get_source_flux()')
         self.logger.info('source flux density requested, currently %.2f Jy'\
                          %self._source_flux)
         return pack('!bf', 0, self._source_flux)
 
+    @info
     def set_source_flux(self, args):
         """ inst.set_source_flux(flux_Jy) -> err_code
         This accepts a single float representing the requested source flux density
@@ -140,39 +145,39 @@ class SimulatorTCPServer(BasicTCPServer):
         self.logger.debug('set_source_flux(%.2f)' %self._source_flux)
         return SBYTE.pack(0)
 
+    @info
     def get_system_temp(self, args):
         """ inst.get_system_temp(antennas=[1,2,3,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase_offsets' with 'system_temp'"""
-        self.logger.debug('get_system_temp')
         return self.get_values('system_temp', args, type='f')
 
+    @info
     def set_system_temp(self, args):
         """ inst.set_system_temp(ant_val=[1,0.0,2,0.0,3,0.0,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase_offsets' with 'system_temp'"""
-        self.logger.debug('set_system_temp')
         return self.set_values('system_temp', args, type='f')
 
+    @info
     def get_phases(self, args):
         """ inst.get_phases(antennas=[1,2,3,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase_offsets' with 'phases'"""
-        self.logger.debug('get_phases')        
         return self.get_values('phases', args, type='f')
 
+    @info
     def set_phases(self, args):
         """ inst.set_phases(ant_val=[1,0.0,2,0.0,3,0.0,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase_offsets' with 'phases'"""
-        self.logger.debug('set_phases')        
         return self.set_values('phases', args, type='f')
 
+    @info
     def get_delays(self, args):
         """ inst.get_delays(antennas=[1,2,3,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase_offsets' with 'delays'"""
-        self.logger.debug('set_delays')
         return self.get_values('delays', args, type='f')
 
+    @info
     def set_delays(self, args):
         """ inst.set_delays(ant_val=[1,0.0,2,0.0,3,0.0,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase_offsets' with 'delays'"""
-        self.logger.debug('set_delays')
         return self.get_values('delays', args, type='f')
 
