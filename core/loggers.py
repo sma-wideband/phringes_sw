@@ -21,7 +21,7 @@ class log:
                 logger = self.logger
             except AttributeError:
                 self.logger = logging.getLogger(self.__class__.__name__)
-            called = method(self, *args, **kwargs)
+            response = method(self, *args, **kwargs)
             argstr = ', '.join(str(i) for i in args)
             kwargstr = ', '.join("%s=%s"%(str(k), str(v)) for k,v in kwargs.iteritems())
             if argstr and kwargstr:
@@ -32,8 +32,12 @@ class log:
                 arg_kwarg = argstr
             else:
                 arg_kwarg = ''
-            self.logger.log(level, "%s(%s)" %(method_name, arg_kwarg))
-            return called
+            if response:
+                msg = "%s(%s) => %s" %(method_name, arg_kwarg, response)
+            else:
+                msg = "%s(%s)" %(method_name, arg_kwarg)
+            self.logger.log(level, msg)
+            return response
 
         return wrapped
 
