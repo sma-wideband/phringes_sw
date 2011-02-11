@@ -383,7 +383,7 @@ class BasicTCPServer(ThreadingTCPServer):
         request packet) and returns the current integration time. The return packet
         will have an error code of 0 following by an unsigned byte representing
         the current integration time."""
-        return pack('!bB', 0, self._integration_time)
+        return pack('!bI', 0, self._integration_time)
 
     @info
     def set_integration_time(self, args):
@@ -391,7 +391,7 @@ class BasicTCPServer(ThreadingTCPServer):
         This accepts a single unsigned byte representing the requested integration
         time and for right now always returns an error code of 0 meaning that the
         correlator integration time was set successfully."""
-        self._integration_time = BYTE.unpack(args[0])[0]
+        self._integration_time = unpack('!I', args)[0]
         return SBYTE.pack(0)
 
     @info
@@ -559,14 +559,14 @@ class BasicTCPClient:
 
     @debug
     def get_integration_time(self):
-        err, response = unpack('!bB', self._request(10, ''))
+        err, response = unpack('!bI', self._request(10, ''))
         if err:
             raise Exception, "error getting integration time!"
         return response
 
     @debug
     def set_integration_time(self, itime):
-        args = pack('!B', itime)
+        args = pack('!I', itime)
         err = BYTE.unpack(self._request(11, args))[0]
         if err:
             raise Exception, "error setting integration time!"
