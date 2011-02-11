@@ -37,8 +37,11 @@ __all__ = [ 'K', 'BYTE', 'SBYTE', 'FLOAT',
 K = 1.3806503 * 10**-23 # m^2 * kg / s * K
 MAX_REQUEST_SIZE = 1024
 BYTE = Struct('!B')
+BYTE_SIZE = BYTE.size
 SBYTE = Struct('!b')
+SBYTE_SIZE = SBYTE.size
 FLOAT = Struct('!f')
+FLOAT_SIZE = FLOAT.size
 
 
 class BasicCorrelationProvider:
@@ -444,7 +447,7 @@ class BasicTCPServer(ThreadingTCPServer):
             param.update(values)
             #self.logger.info('%s updated for antennas %s'%(name, list(values.keys())))
             #self.logger.info('%s currently %s'%(name, param))
-            return pack('!b%d%s'%(len(values), type), err_code, *values)
+            return pack('!b%d%s'%(len(values.values()), type), err_code, *values.values())
         self.logger.error('unmatched antenna/value pairs!')
         return SBYTE.pack(-2)
     
@@ -503,14 +506,116 @@ class BasicTCPServer(ThreadingTCPServer):
         return self.set_values('delay_offsets', args, type='f')
     
 
-def client(address, command, data):
-    """ client(server_address, command_word, arguments) -> recv_packet
-    A simple interface to the above TCP server."""
-    s = socket(AF_INET, SOCK_STREAM)
-    s.connect(address)
-    s.send(pack('!B', command)+data)
-    response = s.recv(MAX_REQUEST_SIZE)
-    s.close()
-    return response
+class BasicTCPClient:
+    """A simple interface to the above TCP server.
+    """
 
-def KILL(): client(('0.0.0.0', 59999), 255, '')
+    @debug
+    def __init__(self, host, port):
+        self.server_address = (host, port)
+
+    @debug
+    def _request(self, command, data):
+        s = socket(AF_INET, SOCK_STREAM)
+        s.connect(self.server_address)
+        s.send(pack('!B', command)+data)
+        response = s.recv(MAX_REQUEST_SIZE)
+        s.close()
+        return response
+
+    @debug
+    def subscribe(self, udp_host, udp_port):
+        octects = [int(i) for i in udp_host.split('.')]
+        ipv4_addr = octects + [udp_port]
+        args = pack('!4BH', *ipv4_addr)
+        err = SBYTE.unpack(self._request(0, args))[0]
+        if err==-1:
+            raise Exception, "address already a subscriber!"
+        elif err==-2:
+            raise Exception, "incorrect number of arguments"
+
+    @debug
+    def unsubscribe(self, udp_host, udp_port):
+        octects = [int(i) for i in udp_host.split('.')]
+        ipv4_addr = octects + [udp_port]
+        args = pack('!4BH', *ipv4_addr)
+        err = SBYTE.unpack(self._request(1, args))[0]
+        if err==-1:
+            raise Exception, "address is not a subscriber!"
+        elif err==-2:
+            raise Exception, "incorrect number of arguments"
+
+    @debug
+    def start_correlator(self):
+        err = SBYTE.unpack(self._request(8, ''))[0]
+        if err:
+            self.logger.warning("correlator already started!")
+
+    @debug
+    def stop_correlator(self):
+        err = SBYTE.unpack(self._request(9, ''))[0]
+        if err:
+            self.logger.warning("correlator has not been started!")
+
+    @debug
+    def get_integration_time(self):
+        err, response = unpack('!bB', self._request(10, ''))
+        if err:
+            raise Exception, "error getting integration time!"
+        return response
+
+    @debug
+    def set_integration_time(self, itime):
+        args = pack('!B', itime)
+        err = BYTE.unpack(self._request(11, args))[0]
+        if err:
+            raise Exception, "error setting integration time!"
+
+    @debug
+    def _get_values(self, command, *antennas):
+        args = pack('!%dB'%len(antennas), *antennas)
+        response = self._request(command, args)
+        if SBYTE.unpack(response[0])[0]:
+            errors = unpack('!%dB'%len(response[1:]), response[1:])
+            raise Exception, "following antennas not in system: %s"%repr(errors)
+        else:
+            return unpack('!%df'%(len(response[1:])/FLOAT_SIZE), response[1:])
+
+    @debug
+    def _set_values(self, command, ant_value_dict):
+        ant_val = []
+        for k, v in ant_value_dict.iteritems():
+            ant_val.extend([k, v])
+        format = '!' + 'Bf'*(len(ant_val)/2)
+        args = pack(format, *ant_val)
+        response = self._request(command, args)
+        err = SBYTE.unpack(response[0])[0]
+        if err==-1:
+            errors = unpack('!%dB'%len(response[1:]), response[1:])
+            raise Exception, "following antennas not in system: %s"%errors
+        elif err==-2:
+            raise Exception, "unmatched antenna/value pairs!"
+        else:
+            return unpack('!%df'%(len(response[1:])/FLOAT_SIZE), response[1:])
+
+    @debug
+    def get_phase_offsets(self, *antennas):
+        return self._get_values(32, *antennas)
+
+    @debug
+    def set_phase_offsets(self, phase_offsets_dict):
+        return self._set_values(33, phase_offsets_dict)
+
+    @debug
+    def get_delay_offsets(self, *antennas):
+        return self._get_values(34, *antennas)
+
+    def set_delay_offsets(self, delay_offsets_dict):
+        return self._set_values(35, delay_offsets_dict)
+
+    @debug
+    def shutdown(self):
+        err = SBYTE.unpack(self._request(255, ''))[0]
+        if err:
+            raise Exception, "server not shutdown properly!"
+        
