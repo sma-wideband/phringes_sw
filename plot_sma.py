@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 
-from time import time, sleep
+from time import time
 from struct import Struct
-from Tkinter import Tk, StringVar, mainloop, Frame,\
+from Tkinter import Tk, StringVar, Frame,\
      OptionMenu, Label, Button, BOTTOM, LEFT, RIGHT, BOTH
 
 from numpy import array, arange, pi, sin, sqrt, concatenate, abs, log10

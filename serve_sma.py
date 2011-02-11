@@ -23,8 +23,8 @@ parser.add_option("-l", "--logfile", action="store",
                   help="if present, write more detailed log to FILE",
                   metavar="FILE")
 parser.add_option("-a", "--host", action="store",
-                  dest="host", default="0.0.0.0",
-                  help="start the server on HOST, defaults to '0.0.0.0'",
+                  dest="host", default="localhost",
+                  help="start the server on HOST, defaults to 'localhost'",
                   metavar="HOST")
 parser.add_option("-p", "--port", action="store", type="int",
                   dest="port", default=59999,
@@ -39,8 +39,8 @@ parser.add_option("--bitstream", action="store",
                   dest="bitstream", default="bee2_complex_corr.bof",
                   help="use BITSTREAM instead of default", metavar="BITSTREAM")
 parser.add_option("--bee2-host", action="store",
-                  dest="bee2_host", default="0.0.0.0",
-                  help="connect to a BEE2 on BEE2-HOST (defaults to b02.ata.pvt)",
+                  dest="bee2_host", default="localhost",
+                  help="connect to a BEE2 on BEE2-HOST (defaults to localhost)",
                   metavar="BEE2-HOST")
 parser.add_option("--bee2-port", action="store",
                   dest="bee2_port", type="int", default=7147,
