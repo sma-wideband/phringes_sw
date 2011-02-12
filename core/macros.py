@@ -8,6 +8,14 @@ from itertools import combinations
 __all__ = ['parse_includes',]
 
 
+def int_(s, base=10, signed=False, bytes=4):
+    uint = int(s, base)
+    if signed and uint>=2**(8*bytes-1):
+        return uint-2**(8*bytes)
+    else:
+        return uint
+
+
 def parse_includes(include, out_of):
     """ parse_includes(include) -> list
     Parses for baselines of the format 'N-M' or 'NxM' and returns
