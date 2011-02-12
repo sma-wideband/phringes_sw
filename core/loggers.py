@@ -4,12 +4,13 @@ Logging decorators
 
 
 import logging
+from time import time
 from functools import wraps
 
 
 class log:
 
-    def __init__(self, level=logging.DEBUG):
+    def __init__(self, level):
         self.level = level
 
     def __call__(self, method):
@@ -19,11 +20,17 @@ class log:
 
         @wraps(method)
         def wrapped(self, *args, **kwargs):
+            start_logger = time()
+
             try:
                 logger = self.logger
             except AttributeError:
                 self.logger = logging.getLogger(self.__class__.__name__)
+
+            start_func = time()
             response = method(self, *args, **kwargs)
+            stop_func = time()
+
             argstr = ', '.join(repr(i) for i in args)
             kwargstr = ', '.join("%s=%s"%(str(k), repr(v)) for k,v in kwargs.iteritems())
             if argstr and kwargstr:
@@ -38,6 +45,11 @@ class log:
                 msg = "%s(%s) => %s" %(method_name, arg_kwarg, repr(response))
             else:
                 msg = "%s(%s)" %(method_name, arg_kwarg)
+
+            stop_logger = time()
+            func_time = (stop_func-start_func)*1000
+            logger_time = (stop_logger-start_logger)*1000
+            msg += "    [%.3f ms][%.3f ms]" %(func_time, logger_time)
             self.logger.log(level, msg)
             return response
 
