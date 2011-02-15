@@ -47,21 +47,21 @@ class Model:
 
 class GeometricModel(Model):
 
-    @debug
+    #@debug
     def __init__(self, server):
         Model.__init__(self, server)
 
     
 class AtmosphericModel(Model):
 
-    @debug
+    #@debug
     def __init__(self, server):
         self.t = None
         self.coeffs = None
         self.normcoeffs = None
         Model.__init__(self, server)
 
-    @debug
+    #@debug
     def _phase_generator(self, baseline, B=1/64.):
         edge = round(16./B)
         self.t = arange(-edge, 1+edge)
