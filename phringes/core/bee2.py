@@ -10,17 +10,18 @@ import struct
 
 from katcp import BlockingClient, Message
 
-from loggers import debug, info
+from phringes.core.loggers import debug, info
 
 
 class NullHandler(logging.Handler):
+    """ Emits nothing, useful for silencing annoying classes """
     def emit(self, record):
         pass
 
 
 class BEE2Client(BlockingClient):
-    """Interface to a tcpborphserver instance running on BEE2
-    """
+    """ Interface to a tcpborphserver instance running on BEE2 """
+    #pylint: disable=R0904
 
     @debug
     def __init__(self, host, port=7147, tb_limit=20, timeout=10.0):
@@ -59,7 +60,9 @@ class BEE2Client(BlockingClient):
 
     @debug
     def _read(self, device_name, size, offset=0):
-        reply, informs = self._request("read", device_name, str(offset), str(size))
+        reply, informs = self._request(
+            "read", device_name, str(offset), str(size)
+        )
         return reply.arguments[1]
 
     @debug
@@ -69,35 +72,35 @@ class BEE2Client(BlockingClient):
     @info
     def regread(self, device_name, signed=False):
         if signed:
-            format = ">i"
+            fmt = ">i"
         else:
-            format = ">I"
+            fmt = ">I"
         data = self._read(device_name, 4, 0)
-        return struct.unpack(format, data)[0]
+        return struct.unpack(fmt, data)[0]
 
     @debug
     def regwrite(self, device_name, integer, signed=False):
         if signed:
-            format = ">i"
+            fmt = ">i"
         else:
-            format = ">I"
-        data = struct.pack(format, integer)
+            fmt = ">I"
+        data = struct.pack(fmt, integer)
         self._write(device_name, data, 0)
 
     @info
     def bramread(self, device_name, size, offset=0, signed=True):
         if signed:
-            format = ">%di" %size
+            fmt = ">%di" % size
         else:
-            format = ">%dI" %size
+            fmt = ">%dI" % size
         data = self._read(device_name, size*4, offset=offset)
-        return struct.unpack(format, data)
+        return struct.unpack(fmt, data)
 
     @debug
     def bramwrite(self, device_name, integers, offset=0, signed=True):
         if signed:
-            format = ">%di" %len(integers)
+            fmt = ">%di" % len(integers)
         else:
-            format = ">%dI" %len(integers)
-        data = struct.pack(format, *integers)
+            fmt = ">%dI" % len(integers)
+        data = struct.pack(fmt, *integers)
         self._write(device_name, data, offset=offset)

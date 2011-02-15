@@ -15,18 +15,16 @@ running on the DDS.
 """
 
 
-from time import sleep
+import logging
 from struct import Struct
 
-from numpy import array
 
-
-from core.bee2 import BEE2Client
-from core.loggers import (
+from phringes.core.bee2 import BEE2Client
+from phringes.core.loggers import (
     debug, info, warning, 
     critical, error,
 )
-from backends.basic import (
+from basic import (
     BasicCorrelationProvider,
     BasicRequestHandler,
     BasicTCPServer,
@@ -46,12 +44,13 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
     over UDP packets to registered subscribers. See 'backends.basic.
     BasicCorrelationProvider' for more detail."""
 
-    @debug
+    #@debug
     def __init__(self, server, include_baselines, 
                  bee2_host, bee2_port, lags=32,
                  bof='bee2_calib_corr.bof'):
         """ Overloaded method which adds some arguments necessary
         for connecting to 'tcpborphserver' running on a BEE2."""
+        self.logger = logging.getLogger(self.__class__.__name__)
         BasicCorrelationProvider.__init__(self, server, include_baselines, lags)
         self.bee2_host = bee2_host
         self.bee2_port = bee2_port
@@ -63,7 +62,7 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
     def _program(self, bof):
         """ Update the list of available bitstreams and program
         the  BEE2 corner chip with the requested image."""
-        self.logger.debug("_program('%s')" %bof)
+        #self.logger.debug("_program('%s')" %bof)
         self.bofs = self.bee2.listbof()
         if bof in self.bofs:
             self.bee2.progdev(bof)
@@ -73,7 +72,7 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
             self.logger.error(err_msg)
             raise BEE2BorphError(err_msg)
 
-    @info
+    #@info
     def correlate(self):
         """ This overloads 'BasicCorrelationProvider.correlate'
         (which does nothing) and enables/resets correlations on
@@ -90,7 +89,7 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
 
 class SubmillimeterArrayTCPServer(BasicTCPServer):
 
-    @debug
+    #@debug
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BEE2CorrelationProvider,
                  n_antennas=8, correlator_lags=32, 

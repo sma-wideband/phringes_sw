@@ -8,7 +8,10 @@ A simulator for the PHRINGES phased-array system
 import logging
 from optparse import OptionParser
 
-from backends.simulator import SimulatorCorrelationProvider, SimulatorTCPServer
+from phringes.backends.simulator import (
+    SimulatorCorrelationProvider, 
+    SimulatorTCPServer,
+)
 
 
 parser = OptionParser()
@@ -48,12 +51,12 @@ elif options.debug:
 else:
     LEVEL = logging.INFO
 console = logging.StreamHandler()
-console.setLevel(LEVEL)
+console.setLevel(logging.DEBUG)#LEVEL)
 formatter = logging.Formatter('%(name)-32s: %(levelname)-8s %(message)s')
 console.setFormatter(formatter)
 
 logger = logging.getLogger('')
-logger.setLevel(LEVEL)
+logger.setLevel(logging.DEBUG)#LEVEL)
 logger.addHandler(console)
 
 if options.logfile:

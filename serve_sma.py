@@ -8,7 +8,9 @@ A TCP server for the PHRINGES phased-array system
 import logging
 from optparse import OptionParser
 
-from backends.sma import SubmillimeterArrayTCPServer
+from phringes.backends.sma import (
+    SubmillimeterArrayTCPServer
+)
 
 
 parser = OptionParser()
@@ -23,7 +25,7 @@ parser.add_option("-l", "--logfile", action="store",
                   help="if present, write more detailed log to FILE",
                   metavar="FILE")
 parser.add_option("-a", "--host", action="store",
-                  dest="host", default="localhost",
+                  dest="host", default="127.0.0.1",
                   help="start the server on HOST, defaults to 'localhost'",
                   metavar="HOST")
 parser.add_option("-p", "--port", action="store", type="int",
@@ -39,7 +41,7 @@ parser.add_option("--bitstream", action="store",
                   dest="bitstream", default="bee2_complex_corr.bof",
                   help="use BITSTREAM instead of default", metavar="BITSTREAM")
 parser.add_option("--bee2-host", action="store",
-                  dest="bee2_host", default="localhost",
+                  dest="bee2_host", default="128.171.116.127",
                   help="connect to a BEE2 on BEE2-HOST (defaults to localhost)",
                   metavar="BEE2-HOST")
 parser.add_option("--bee2-port", action="store",

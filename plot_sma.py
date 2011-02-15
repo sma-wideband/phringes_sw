@@ -9,7 +9,7 @@ from Tkinter import Tk, StringVar, Frame,\
 from numpy import array, arange, pi, sin, sqrt, concatenate, abs, log10
 from numpy.fft import fft
 
-from plotting.rtplot import RealTimePlot
+from phringes.plotting.rtplot import RealTimePlot
 
 
 root = Tk()

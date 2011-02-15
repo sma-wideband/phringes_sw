@@ -11,19 +11,26 @@ own local interfaces
 """
 
 
+import logging
+
 from math import pi
 from time import time, sleep
-from binhex import binascii as b2a
 from struct import Struct, pack, unpack, calcsize
-from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR
 from SocketServer import ThreadingTCPServer, BaseRequestHandler
 from threading import Thread, RLock, Event
+from socket import error as SocketError
+from socket import timeout as SocketTimeout
+from socket import (
+    socket, AF_INET, SOCK_STREAM, 
+    SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR,
+    SHUT_RDWR, 
+    )
 
-from core.macros import parse_includes
-from core.loggers import (
+from phringes.core.macros import parse_includes
+from phringes.core.loggers import (
     debug, info, warning, 
     critical, error,
-)
+    )
 
 
 __all__ = [ 'K', 'BYTE', 'SBYTE', 'FLOAT',
@@ -40,6 +47,8 @@ BYTE = Struct('!B')
 BYTE_SIZE = BYTE.size
 SBYTE = Struct('!b')
 SBYTE_SIZE = SBYTE.size
+SHORT = Struct('!H')
+SHORT_SIZE = SHORT.size
 FLOAT = Struct('!f')
 FLOAT_SIZE = FLOAT.size
 
@@ -61,6 +70,7 @@ class BasicCorrelationProvider:
         self._correlations = {}
         self._include_baselines = include_baselines
         self._DATA_PKT = Struct('!fBB%di'%self._lags)
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     @debug
     def is_subscriber(self, address):
@@ -158,32 +168,59 @@ class BasicRequestHandler(BaseRequestHandler):
     def __init__(self, request, client_address, server):
         """ BasicRequestHandler(request, client_address, server) -> inst
         Returns an instance of BasicRequestHandler."""
+        self.logger = logging.getLogger(self.__class__.__name__)
         BaseRequestHandler.__init__(self, request, client_address, server)
+
+    @error
+    def _null_response(self, msg):
+        self.logger.error(msg)
+        self.request.sendall(SHORT.pack(2) + SBYTE.pack(-1))
+        
+    @error
+    def _incorrect_size(self, name, good, bad):
+        self.logger.error(
+            "%s should be %s bytes but is %s instead" %(name, good, bad)
+            )
+        self.request.sendall(SHORT.pack(2) + SBYTE.pack(-2))
+
+    @error
+    def _no_command(self, cmd):
+        self.logger.error('no such command word %d!' % cmd)
+        self.request.sendall(SHORT.pack(2) + SBYTE.pack(-1))
 
     @debug
     def handle(self):
         """ inst.handle() -> None
         Handles a specific request by finding the appropropriate member
         function of the instantiating BasicTCPServer using that instance's
-        _command_set member with the first byte of the request as the command word,
-        and the rest of the request is passed as the arguments. The return value
-        of the method is then sent back over TCP."""
-        request = self.request.recv(MAX_REQUEST_SIZE)#.rstrip('\n')
-        if request:
-            self.logger.debug('request of size %d (%s)'%(len(request), b2a.hexlify(request[:8])))
-            args = request[1:]
-            command = BYTE.unpack(request[0])[0]
-            method = self.server._command_set.get(command)
-            if method:
-                with RLock():
-                    response = self.server._command_set[command](args)
-            else:
-                self.logger.error('no such command word %d!'%command)
-                response = SBYTE.pack(-1)
+        _command_set member with the first byte of the request as the command 
+        word, and the rest of the request is passed as the arguments. The 
+        return value of the method is then sent back over TCP."""
+        buf = ""
+        size = None
+        while buf < size or size is None:
+            request = self.request.recv(MAX_REQUEST_SIZE)
+            if not request:
+                return self._null_response('null packet received!')
+            elif len(request)>=2 and size is None:
+                size = SHORT.unpack(request[:2])[0]
+            buf += request
+        if len(buf) != size:
+            return self._incorrect_size('request', size, len(buf))
+
+        # buf should now have the full message
+        self.logger.debug('request of size %d (%s)'%(len(request), repr(buf)))
+        args = buf[3:]
+        cmd = BYTE.unpack(buf[2])[0]
+        method = self.server._command_set.get(cmd)
+        if method:
+            with RLock():
+                response = self.server._command_set[cmd](args)
         else:
-            self.logger.error('null packet received!')
-            response = SBYTE.pack(-2)
-        self.request.send(response)
+            return self._no_command(cmd)
+        # finally if all went well send our response
+        sent = self.request.send(SHORT.pack(len(response)+2) + response)
+        self.logger.debug('sent %s bytes' % sent)
 
 
 class BasicTCPServer(ThreadingTCPServer):
@@ -216,8 +253,8 @@ class BasicTCPServer(ThreadingTCPServer):
         error code (0 means good, negative numbers mean an error occurred)
         which may then be following by the requested set of values:
 
-        [command word]:[variable length] -> [error code]:[return values ]
-        [   1-byte   ]:[max 1016-bytes ] -> [  1-byte  ]:[max 1016-bytes]
+        [ size  ][command word]:[variable length] -> [ size  ][error code]:[return values ]
+        [2-bytes][   1-byte   ]:[max 1016-bytes ] -> [2-bytes][  1-byte  ]:[max 1016-bytes]
 
         Note that the actual correlator data packets are sent over UDP, not
         through this command set (see the doc-string for BasicCorrelation-
@@ -243,6 +280,7 @@ class BasicTCPServer(ThreadingTCPServer):
         Commands 32-127 are reserved for adjusting feedback parameters.
         Commands 128-254 are reserved for user specific methods
         Command 255 is reserved for shutting down the server."""
+        self.logger = logging.getLogger(self.__class__.__name__)
         self._command_set = { 0 : self.subscribe,
                               1 : self.unsubscribe,
                               8 : self.start_correlator,
@@ -260,13 +298,17 @@ class BasicTCPServer(ThreadingTCPServer):
         self._integration_time = initial_int_time
         self._antenna_diameter = antenna_diameter
         self._antenna_area = pi * self._antenna_diameter**2 # m^2
-        self._antenna_efficiency = 10**-26 * (0.75 * self._antenna_area) / (2 * K) # K / Jy
-        self._include_baselines = parse_includes(include_baselines, range(self._n_antennas))
         self._system_temp = dict((i, 150.0) for i in range(self._n_antennas))
         self._phases = dict((i, 0.0) for i in range(self._n_antennas))
         self._phase_offsets = dict((i, 0.0) for i in range(self._n_antennas))
         self._delays = dict((i, 2000.0) for i in range(self._n_antennas))
         self._delay_offsets = dict((i, 0.0) for i in range(self._n_antennas))
+        self._antenna_efficiency = 10**-26 * (
+            (0.75 * self._antenna_area) / (2 * K) # K / Jy
+        )
+        self._include_baselines = parse_includes(
+            include_baselines, range(self._n_antennas)
+        )
         ThreadingTCPServer.__init__(self, address, handler)
 
     @info
@@ -435,7 +477,8 @@ class BasicTCPServer(ThreadingTCPServer):
         errors = []
         if len(args) % pair_size == 0:
             for p in range(len(args)/pair_size):
-                antenna, value = unpack('!B'+type, args[p*pair_size:pair_size*(p+1)])
+                antenna, value = unpack('!B'+type, 
+                                        args[p*pair_size:pair_size*(p+1)])
                 if antenna in param:
                     values[antenna] = value
                 else:
@@ -504,31 +547,164 @@ class BasicTCPServer(ThreadingTCPServer):
         """ inst.set_delay_offsets(ant_val=[1,0.0,2,0.0,3,0.0,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase' with 'delay'"""
         return self.set_values('delay_offsets', args, type='f')
-    
 
-class BasicTCPClient:
-    """A simple interface to the above TCP server.
+        
+class BasicNetworkError(Exception):
+    pass
+
+class NullPacketError(BasicNetworkError):
+    pass
+
+class IncorrectSizeError(BasicNetworkError):
+    pass
+
+class NotRespondingError(BasicNetworkError):
+    pass
+
+class ClientClosedError(BasicNetworkError):
+    pass
+
+        
+class BasicNetworkClient:
+    """ A very basic network client
+    
+    Subclasses must override the following methods:
+        
+        _open_socket() -> None
+            should set inst.socket to a socket.socket object
+
+        _sock_recv(size) -> partial_response
+            should receive data over self.socket of length 'size'
+            
+        _sock_send(data) -> None
+            should send all of 'data' over self.socket
+            
+        _close_socket() -> None
+            should properly close inst.socket
+            
+    It is preferable to _not_ override _request but instead to use a
+    wrapper function, such as _command, which implements a higher level 
+    request.
+
     """
 
     @debug
-    def __init__(self, host, port):
-        self.server_address = (host, port)
+    def __init__(self, host, port, timeout=3.0):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.address = (host, port)
+        self.timeout = timeout
 
     @debug
-    def _request(self, command, data):
-        s = socket(AF_INET, SOCK_STREAM)
-        s.connect(self.server_address)
-        s.send(pack('!B', command)+data)
-        response = s.recv(MAX_REQUEST_SIZE)
-        s.close()
-        return response
+    def _open_socket(self):
+        """ _open_socket()
+        This function should properly open the appropriate socket, 
+        in self.socket.
+        """
+        raise NotImplementedError
+        
+    @debug
+    def _sock_recv(self, size):
+        """ _sock_recv(size)
+        This function should implement a receive on the socket.
+        """
+        raise NotImplementedError
 
+    @debug
+    def _sock_send(self, data):
+        """ _sock_send(data)
+        This function should implement a transmit on the socket.
+        """
+        raise NotImplementedError
+
+    @debug
+    def _close_socket(self):
+        """ _close_socket()
+        This function should properly close self.socket.
+        """
+        raise NotImplementedError
+
+    @debug
+    def _request(self, data, resp_size):
+        """ _request(data, resp_size) -> resposne
+        
+        This function should take the following arguments:
+            
+            @data      -- data to be sent over the socket
+            @resp_size -- size of the response packet (see below)
+            #response  -- the response packet from the server
+        
+        Note, this function requires that the calling function know exactly
+        what the size (in bytes) of the return packet will be, if they don't 
+        match the socket will timeout.
+        
+        """
+        try:
+            self._sock_send(data)
+        except SocketError:
+            self.logger.error("socket has been closed!")
+            raise SocketError, "socket has been closed!"           
+        buf = ""
+        while len(buf) < resp_size:
+            try:
+                data = self._sock_recv(MAX_REQUEST_SIZE)
+                if not data:
+                    raise NullPacketError, "socket sending Null strings!"
+                buf += data
+                self.logger.debug("buffer size: %d"%len(buf))
+            except SocketTimeout:
+                self.logger.warning("socket timed out on recv!")
+                raise NotRespondingError, "socket not responding!"
+            except SocketError:
+                self.logger.error("client has been closed!")
+                raise ClientClosedError, "client has been closed!"           
+        return buf
+
+
+class BasicInterfaceClient(BasicNetworkClient):
+    """ An interface to the above BasicTCPServer, and its subclasses.
+    """
+
+    def _open_socket(self):
+        self.sock = socket(AF_INET, SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.address)
+
+    def _close_socket(self):
+        try:
+            self.sock.shutdown(SHUT_RDWR)
+            self.sock.close()
+        except SocketError:
+            self.logger.warning("attempted to shutdown a closed socket!")
+
+    def _sock_recv(self, size):
+        return self.sock.recv(size)
+        
+    def _sock_send(self, data):
+        return self.sock.sendall(data)
+        
+    def _request(self, cmd, size=None):
+        buf = ""
+        self._open_socket()
+        self._sock_send(SHORT.pack(len(cmd)+2) + cmd)
+        while buf < size or size is None:
+            request = self._sock_recv(MAX_REQUEST_SIZE)
+            if not request:
+                raise NullPacketError
+            if len(request)>=2 and size is None:
+                size = SHORT.unpack(request[:2])[0]
+            buf += request
+        if len(buf) != size:
+            raise IncorrectSizeError, 'return packet is the wrong size!'            
+        self._close_socket()
+        size, err = unpack('!Hb', buf[:3])
+        return size, err, buf[3:]
+        
     @debug
     def subscribe(self, udp_host, udp_port):
         octects = [int(i) for i in udp_host.split('.')]
         ipv4_addr = octects + [udp_port]
-        args = pack('!4BH', *ipv4_addr)
-        err = SBYTE.unpack(self._request(0, args))[0]
+        cmd = pack('!B4BH', 0, *ipv4_addr)
+        size, err, resp = self._request(cmd)
         if err==-1:
             raise Exception, "address already a subscriber!"
         elif err==-2:
@@ -538,8 +714,8 @@ class BasicTCPClient:
     def unsubscribe(self, udp_host, udp_port):
         octects = [int(i) for i in udp_host.split('.')]
         ipv4_addr = octects + [udp_port]
-        args = pack('!4BH', *ipv4_addr)
-        err = SBYTE.unpack(self._request(1, args))[0]
+        cmd = pack('!B4BH', 1, *ipv4_addr)
+        size, err, resp = self._request(cmd)
         if err==-1:
             raise Exception, "address is not a subscriber!"
         elif err==-2:
@@ -547,56 +723,57 @@ class BasicTCPClient:
 
     @debug
     def start_correlator(self):
-        err = SBYTE.unpack(self._request(8, ''))[0]
+        cmd = BYTE.pack(8)
+        size, err, resp = self._request(cmd)
         if err:
             self.logger.warning("correlator already started!")
 
     @debug
     def stop_correlator(self):
-        err = SBYTE.unpack(self._request(9, ''))[0]
+        cmd = BYTE.pack(9)
+        size, err, resp = self._request(cmd)
         if err:
             self.logger.warning("correlator has not been started!")
 
     @debug
     def get_integration_time(self):
-        err, response = unpack('!bI', self._request(10, ''))
+        cmd = BYTE.pack(10)
+        size, err, resp = self._request(cmd)
         if err:
             raise Exception, "error getting integration time!"
-        return response
+        return unpack('!I', resp)[0]
 
     @debug
     def set_integration_time(self, itime):
-        args = pack('!I', itime)
-        err = BYTE.unpack(self._request(11, args))[0]
+        cmd = pack('!BI', 11, itime)
+        size, err, resp = self._request(cmd)
         if err:
             raise Exception, "error setting integration time!"
 
     @debug
     def _get_values(self, command, *antennas):
-        args = pack('!%dB'%len(antennas), *antennas)
-        response = self._request(command, args)
-        if SBYTE.unpack(response[0])[0]:
-            errors = unpack('!%dB'%len(response[1:]), response[1:])
-            raise Exception, "following antennas not in system: %s"%repr(errors)
+        cmd = pack('!B%dB' % len(antennas), command, *antennas)
+        size, err, resp = self._request(cmd)
+        if err:
+            errors = unpack('!%dB' % len(resp), resp)
+            raise Exception, "following antennas not in system: %r" % (errors,)
         else:
-            return unpack('!%df'%(len(response[1:])/FLOAT_SIZE), response[1:])
+            return unpack('!%df' % (len(resp)/FLOAT_SIZE), resp)
 
     @debug
     def _set_values(self, command, ant_value_dict):
         ant_val = []
         for k, v in ant_value_dict.iteritems():
             ant_val.extend([k, v])
-        format = '!' + 'Bf'*(len(ant_val)/2)
-        args = pack(format, *ant_val)
-        response = self._request(command, args)
-        err = SBYTE.unpack(response[0])[0]
+        cmd = pack('!B' + 'Bf'*(len(ant_val)/2), command, *ant_val)
+        size, err, resp = self._request(cmd)
         if err==-1:
-            errors = unpack('!%dB'%len(response[1:]), response[1:])
-            raise Exception, "following antennas not in system: %s"%errors
+            errors = unpack('!%dB' % len(resp), resp)
+            raise Exception, "following antennas not in system: %r" % (errors,)
         elif err==-2:
             raise Exception, "unmatched antenna/value pairs!"
         else:
-            return unpack('!%df'%(len(response[1:])/FLOAT_SIZE), response[1:])
+            return unpack('!%df' % (len(resp)/FLOAT_SIZE), resp)
 
     @debug
     def get_phase_offsets(self, *antennas):
@@ -615,7 +792,49 @@ class BasicTCPClient:
 
     @debug
     def shutdown(self):
-        err = SBYTE.unpack(self._request(255, ''))[0]
+        cmd = pack('!B', 255)
+        size, err, resp = self._request(cmd)
         if err:
             raise Exception, "server not shutdown properly!"
+
         
+class BasicTCPClient(BasicNetworkClient):
+    """ A simple TCP client
+    This is more suitable to a telnet-like server
+    """
+
+    def __init__(self, host, port, timeout=3.0):
+        BasicNetworkClient.__init__(self, host, port, timeout=timeout)
+        self.cmdfmt = "{cmd} {args}\n"
+        self._open_socket()
+
+    def _open_socket(self):
+        self.sock = socket(AF_INET, SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.address)
+
+    def _close_socket(self):
+        try:
+            self.sock.shutdown(SHUT_RDWR)
+            self.sock.close()
+        except SocketError:
+            self.logger.warning("attempted to shutdown a closed socket!")
+
+    def _sock_recv(self, size):
+        return self.sock.recv(size)
+        
+    def _sock_send(self, data):
+        return self.sock.sendall(data)
+
+    @debug
+    def _command(self, cmd, args, argsdict, argfmt, retparser, retsize):
+        """ _command is just a wrapper for _request that catches LWIPError
+        exceptions and closes and reopens the connection"""
+        args = argfmt.format(*args, **argsdict)
+        try:
+            return retparser(
+                self._request(self.cmdfmt.format(cmd=cmd, args=args), retsize)
+                )
+        except BasicNetworkError:
+            self.logger.error("errors occured, reconnecting...")
+            self.reconnect()

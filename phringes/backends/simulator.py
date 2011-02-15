@@ -7,6 +7,8 @@ A simulator for the PHRINGES phased-array system
 """
 
 
+import logging
+
 from math import sqrt, pi
 from time import time, sleep
 from binhex import binascii as b2a
@@ -21,12 +23,14 @@ except ImportError:
     Please install python-numpy >= 1.4.1""")
     exit()
 
-from core.models import GeometricModel, AtmosphericModel
-from core.macros import parse_includes
-from backends.basic import (
+from phringes.core.models import GeometricModel, AtmosphericModel
+from phringes.core.macros import parse_includes
+from basic import (
     BasicCorrelationProvider,
     BasicRequestHandler,
     BasicTCPServer,
+    
+    FLOAT, SBYTE,
     MAX_REQUEST_SIZE,
 
     debug, info, warning, # actually imported
@@ -35,7 +39,7 @@ from backends.basic import (
 
 
 class SimulatorCorrelationProvider(BasicCorrelationProvider):
-
+    
     @debug
     def correlate(self):
         """ inst.correlate() -> None
@@ -85,7 +89,7 @@ class SimulatorCorrelationProvider(BasicCorrelationProvider):
 
 class SimulatorTCPServer(BasicTCPServer):
     
-    @debug
+    #@debug
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BasicCorrelationProvider,
                  n_antennas=8, correlator_lags=32, 
@@ -180,4 +184,3 @@ class SimulatorTCPServer(BasicTCPServer):
         """ inst.set_delays(ant_val=[1,0.0,2,0.0,3,0.0,...]) -> values=[0.0,0.0,0.0,...]
         See inst.get_phase_offsets but replace 'phase_offsets' with 'delays'"""
         return self.get_values('delays', args, type='f')
-

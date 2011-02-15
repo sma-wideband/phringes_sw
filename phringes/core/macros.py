@@ -8,10 +8,10 @@ from itertools import combinations
 __all__ = ['parse_includes',]
 
 
-def int_(s, base=10, signed=False, bytes=4):
+def int_(s, base=10, signed=False, size=4):
     uint = int(s, base)
-    if signed and uint>=2**(8*bytes-1):
-        return uint-2**(8*bytes)
+    if signed and uint >= 2**(8*size-1):
+        return uint-2**(8*size)
     else:
         return uint
 
@@ -26,11 +26,11 @@ def parse_includes(include, out_of):
     all_baselines = set(combinations(out_of, 2))
     parsed = findall('([*\d]+)[x-]([*\d]+)', include)
     for a, b in parsed:
-        if a=='*' and b=='*':
+        if a == '*' and b == '*':
             include_antennas.update(out_of)
-        elif a=='*':
+        elif a == '*':
             include_antennas.add(int(b))
-        elif b=='*':
+        elif b == '*':
             include_antennas.add(int(a))
         else:
             include_baselines.add((int(a), int(b)))

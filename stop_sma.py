@@ -15,7 +15,7 @@ parser.add_option("--port", action="store", type="int",
 (options, args) = parser.parse_args()
 
 
-from backends.basic import BasicTCPClient
+from phringes.backends.basic import BasicTCPClient
 
 sma = BasicTCPClient(options.host, options.port)
 sma.shutdown()

@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 
 
-from numpy import pi, around, arange, sinc, resize, insert, dot, hamming, sqrt
+import logging
+from numpy import arange, sinc, resize, insert, dot, hamming, sqrt
 from numpy.random import normal
 
-from core.loggers import (
-    debug, info, warning,
-    error, critical,
-)
+from phringes.core.loggers import debug
 
 
 __all__ = ['Model',
@@ -19,6 +17,7 @@ class Model:
 
     @debug
     def __init__(self, server):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.server = server
         self._delay = dict((b, self._delay_generator(b)) 
                            for b in self.server._include_baselines)
@@ -27,11 +26,15 @@ class Model:
 
     @debug
     def _delay_generator(self, baseline):
-        while True: yield 0.0
+        #pylint: disable=W0613
+        while True: 
+            yield 0.0
 
     @debug
     def _phase_generator(self, baseline):
-        while True: yield 0.0
+        #pylint: disable=W0613
+        while True: 
+            yield 0.0
 
     @debug
     def delay(self, baseline):
@@ -53,6 +56,9 @@ class AtmosphericModel(Model):
 
     @debug
     def __init__(self, server):
+        self.t = None
+        self.coeffs = None
+        self.normcoeffs = None
         Model.__init__(self, server)
 
     @debug
@@ -67,5 +73,7 @@ class AtmosphericModel(Model):
             white_noise = resize(insert(white_noise, 0, normal(0, 1)),
                                  len(self.normcoeffs))
             low_passed = dot(white_noise, self.normcoeffs)
-            self.logger.debug('phase %.2f rads on baseline %s' %(low_passed, str(baseline)))
+            self.logger.debug(
+                'phase %.2f rads on baseline %s' %(low_passed, str(baseline))
+            )
             yield low_passed
