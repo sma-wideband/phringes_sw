@@ -590,7 +590,8 @@ class BasicNetworkClient:
 
     @debug
     def __init__(self, host, port, timeout=3.0):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        logger_name = "%s(%s:%r)" %(self.__class__.__name__, host, port)
+        self.logger = logging.getLogger(logger_name)
         self.address = (host, port)
         self.timeout = timeout
 
