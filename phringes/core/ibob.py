@@ -24,17 +24,17 @@ class IBOBClient(BasicTCPClient):
     """ Interface to a single iBOB running lwIP
     """
 
-    @info
+    @debug
     def regread(self, device_name):
         retparser = lambda buf: int(buf.split()[-1].lstrip('0') or '0')
         return self._command('regread', [device_name], {}, 
                              "{0}", retparser, 63)
 
-    @info
+    @debug
     def regwrite(self, device_name, integer):
         retparser = lambda buf: None
         return self._command('regwrite', [device_name, integer], {},
-                             "{0} {1}", retparser, 0)
+                             "{0} {1}", retparser, 1)
 
     @debug
     def bramdump_iter(self, device_name, length, start=0, signed=True):
@@ -46,11 +46,11 @@ class IBOBClient(BasicTCPClient):
             "{0} {loc} {1}", retparser, 12*length+1
         )
 
-    @info
+    @debug
     def bramdump(self, device_name, length, start=0, signed=True):
         return list(self.bramdump_iter(device_name, length, start, signed))
 
-    @info
+    @debug
     def bramwrite(self, device_name, integer, location=0):
         retparser = lambda buf: None
         return self._command(
@@ -58,11 +58,11 @@ class IBOBClient(BasicTCPClient):
             "{0} {loc} {1}", retparser, 0
         )
 
-    @info
+    @debug
     def reconnect(self):
         self._close_socket()
         self._open_socket()
 
-    @info
+    @debug
     def close(self):
         self._close_socket()

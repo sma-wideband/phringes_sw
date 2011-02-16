@@ -25,7 +25,7 @@ parser.add_option("-l", "--logfile", action="store",
                   help="if present, write more detailed log to FILE",
                   metavar="FILE")
 parser.add_option("-a", "--host", action="store",
-                  dest="host", default="127.0.0.1",
+                  dest="host", default="0.0.0.0",
                   help="start the server on HOST, defaults to 'localhost'",
                   metavar="HOST")
 parser.add_option("-p", "--port", action="store", type="int",
@@ -37,17 +37,11 @@ parser.add_option("-b", "--baselines", action="store",
                   help="include BASELINES, format is N-M or NxM where N/M can either "
                   "be antenna numbers or the wildcard *. So 4-* means all baselines to "
                   "antenna 4", metavar="BASELINES")
-parser.add_option("--bitstream", action="store",
-                  dest="bitstream", default="bee2_complex_corr.bof",
-                  help="use BITSTREAM instead of default", metavar="BITSTREAM")
-parser.add_option("--bee2-host", action="store",
-                  dest="bee2_host", default="128.171.116.127",
-                  help="connect to a BEE2 on BEE2-HOST (defaults to localhost)",
-                  metavar="BEE2-HOST")
-parser.add_option("--bee2-port", action="store",
-                  dest="bee2_port", type="int", default=7147,
-                  help="use 'tcpborphserver' on port BEE2-PORT (default 7147)",
-                  metavar="BEE2-PORT")
+parser.add_option("--block", action="store",
+                  dest="block", default="high",
+                  help="start the correlator on BLOCK, can be 'high' or 'low' "
+                  "(default 'high')",
+                  metavar="BLOCK")
 (options, args) = parser.parse_args()
 
 
@@ -59,7 +53,7 @@ else:
     LEVEL = logging.INFO
 console = logging.StreamHandler()
 console.setLevel(LEVEL)
-formatter = logging.Formatter('%(name)-32s: %(levelname)-8s %(message)s')
+formatter = logging.Formatter('%(name)-32s: %(asctime)s : %(levelname)-8s %(message)s')
 console.setFormatter(formatter)
 
 logger = logging.getLogger('')
@@ -72,11 +66,22 @@ if options.logfile:
     logfile.setFormatter(formatter)
     logger.addHandler(logfile)
 
+bee2_bitstream = 'bee2_complex_corr.bof'
+bee2_host = '128.171.116.127'
+if options.block=="high":
+    bee2_port = 7147
+    ipa_hosts = ('ipahi0', 'ipahi1')
+    dbe_host = 'dbehi'
+elif options.block=='low':
+    bee2_port = 7148
+    ipa_hosts = ('169.254.128.5', '169.254.128.4')
+    dbe_host = '169.254.128.1'
+
 HOST, PORT = options.host, options.port
 server = SubmillimeterArrayTCPServer((HOST, PORT), include_baselines=options.include_baselines,
-                                     initial_int_time=1, bee2_host=options.bee2_host,
-                                     bee2_port=options.bee2_port,
-                                     correlator_bitstream=options.bitstream)
+                                     initial_int_time=1, bee2_host=bee2_host, bee2_port=bee2_port,
+                                     correlator_bitstream=bee2_bitstream, ipa_hosts=ipa_hosts,
+                                     dbe_host=dbe_host)
 ip, port = server.server_address
 
 logger.info('starting server on port %d'%port)
