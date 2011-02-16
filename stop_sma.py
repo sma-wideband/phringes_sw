@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 
+from socket import error as SocketError
+
 from optparse import OptionParser
 
 parser = OptionParser()
@@ -17,5 +19,9 @@ parser.add_option("--port", action="store", type="int",
 
 from phringes.backends.basic import BasicInterfaceClient
 
+
 sma = BasicInterfaceClient(options.host, options.port)
-sma.shutdown()
+try:
+    sma.shutdown()
+except SocketError:
+    pass

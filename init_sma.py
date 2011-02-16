@@ -17,6 +17,7 @@ GITPATH = '/usr/local/bin'
 PYTHONPATH = '/usr/local/bin'
 PHRINGES_LOG_FILE = '/var/log/phringes'
 PHRINGES_REPO = '/usr/local/src/python-phringes'
+#PHRINGES_REPO = '/home/rprimian/git/python-phringes'
 
 
 def start():

@@ -115,7 +115,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                        'ipa1': self._ipa1,
                        'dbe': self._dbe}
         self.setup()
-        self.start_checks_loop(10.0)
+        self.start_checks_loop(30.0)
 
     def shutdown(self, args):
         self.stop_checks_loop()
@@ -140,8 +140,11 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             period = self._dbe.regread(xaui+'/period')
             period_err = self._dbe.regread(xaui+'/period_err')
             period_err_cnt = self._dbe.regread(xaui+'/period_err_cnt')
+            linkdown_cnt = self._dbe.regread(xaui+'/linkdown_cnt')
             self.logger.info("{0}: last sync lasted {1} "
-                "({2} errors since reset)".format(xaui, period, period_err_cnt))
+                "(period errors: {2})(linkdowns: {3})".format(xaui, period,
+                                                             period_err_cnt,
+                                                             linkdown_cnt))
 
     @info
     def setup(self):
