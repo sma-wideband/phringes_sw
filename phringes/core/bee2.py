@@ -48,7 +48,7 @@ class BEE2Client(BlockingClient):
         reply, informs = self._request("listbof")
         return [i.arguments[0] for i in informs]
 
-    @info
+    @debug
     def progdev(self, device_name):
         reply, informs = self._request("progdev", device_name)
         return reply.arguments[0]
@@ -69,7 +69,7 @@ class BEE2Client(BlockingClient):
     def _write(self, device_name, data, offset=0):
         self._request("write", device_name, str(offset), data)
 
-    @info
+    @debug
     def regread(self, device_name, signed=False):
         if signed:
             fmt = ">i"
@@ -87,7 +87,7 @@ class BEE2Client(BlockingClient):
         data = struct.pack(fmt, integer)
         self._write(device_name, data, 0)
 
-    @info
+    @debug
     def bramread(self, device_name, size, offset=0, signed=True):
         if signed:
             fmt = ">%di" % size

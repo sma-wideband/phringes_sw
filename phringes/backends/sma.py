@@ -108,6 +108,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 include_baselines=include_baselines)
         self._correlator = correlator(self, self._include_baselines, bee2_host, bee2_port, 
                                       lags=correlator_lags, bof=correlator_bitstream)
+        self._bee2 = BEE2Client(bee2_host, bee2_port)
         self._ipa0 = IBOBClient(ipa_hosts[0], port=23)
         self._ipa1 = IBOBClient(ipa_hosts[1], port=23)
         self._dbe = IBOBClient(dbe_host, port=23)
@@ -134,17 +135,21 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def _check_XAUI(self):
-        for xaui in ['xaui0', 'xaui1']:
-            if self._dbe.regread(xaui+'/rx_linkdown'):
-                self.logger.error('DBE %s link is down!' % xaui)
-            period = self._dbe.regread(xaui+'/period')
-            period_err = self._dbe.regread(xaui+'/period_err')
-            period_err_cnt = self._dbe.regread(xaui+'/period_err_cnt')
-            linkdown_cnt = self._dbe.regread(xaui+'/linkdown_cnt')
-            self.logger.info("{0}: last sync lasted {1} "
-                "(period errors: {2})(linkdowns: {3})".format(xaui, period,
-                                                             period_err_cnt,
-                                                             linkdown_cnt))
+        boards = {'DBE': (self._dbe, '/'),
+                  'BEE2': (self._bee2, '_')}
+        for board_name, info in boards.iteritems():
+            board, regsep = info
+            msg = "{board}/{0}: last sync lasted {1} (period errors: {2})(linkdowns: {3})"
+            for xaui in ['xaui0', 'xaui1']:
+                prefix = xaui+regsep
+                if board.regread(prefix+'rx_linkdown'):
+                    self.logger.error('DBE %s link is down!' % xaui)
+                period = board.regread(prefix+'period')
+                period_err = board.regread(prefix+'period_err')
+                period_err_cnt = board.regread(prefix+'period_err_cnt')
+                linkdown_cnt = board.regread(prefix+'linkdown_cnt')
+                self.logger.info(msg.format(xaui, period, period_err_cnt,
+                                            linkdown_cnt, board=board_name))
 
     @info
     def setup(self):

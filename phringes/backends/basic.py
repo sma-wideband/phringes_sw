@@ -651,7 +651,7 @@ class BasicNetworkClient:
                 if not data:
                     raise NullPacketError, "socket sending Null strings!"
                 buf += data
-                self.logger.debug("buffer size: %d"%len(buf))
+                self.logger.debug("buffer: %r" % buf)
             except SocketTimeout:
                 self.logger.warning("socket timed out on recv!")
                 raise NotRespondingError, "socket not responding!"
