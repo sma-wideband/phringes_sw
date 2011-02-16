@@ -23,10 +23,10 @@ def start():
     os.chdir(PHRINGES_REPO)
     os.system('sudo -u rprimian %s/git pull --ff-only origin master' % GITPATH)
     print "Starting the SMA phringes server..."
-    if os.system("%s/python serve_sma.py -v -l %s.high -a 0.0.0.0 -p 59999 "
+    if os.system("%s/python serve_sma.py -l %s.high -a 0.0.0.0 -p 59999 "
                  "--block high -b *-* </dev/null >&/dev/null &" % (PYTHONPATH, PHRINGES_LOG_FILE)):
         print "Could not start the high block server!"
-    if os.system("%s/python serve_sma.py -v -l %s.low -a 0.0.0.0 -p 59998 "
+    if os.system("%s/python serve_sma.py -l %s.low -a 0.0.0.0 -p 59998 "
                  "--block low -b *-* </dev/null >&/dev/null &" % (PYTHONPATH, PHRINGES_LOG_FILE)):
         print "Could not start the low block server!"
 
