@@ -16,6 +16,7 @@ running on the DDS.
 
 
 import logging
+from math import pi
 from struct import Struct
 from threading import Thread, RLock, Event
 from time import asctime, sleep
@@ -213,7 +214,15 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def _phase_handler(self, mode, ibob, ibob_input, value=None):
-        return 0.0
+        deg_per_step = 360./2**12
+        regname = 'phase%d' % ibob_input
+        if mode=='get':
+            regvalue = ibob.regread(regname)
+            return regvalue * deg_per_step
+        elif mode=='set':
+            regvalue = round(value/deg_per_step)
+            ibob.regwrite(regname, int(regvalue))
+            return self._phase_handler('get', ibob, ibob_input)
 
     def get_value(self, param, antenna):
         try:
