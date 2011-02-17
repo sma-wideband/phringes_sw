@@ -105,8 +105,14 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._dbe = IBOBClient(dbe_host, port=23)
         self._ibobs = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe}
         self._mapping = dict((a, a-1) for a in self._antennas)
-        self._command_set.update({ 2 : self.get_mapping,
-                                   3 : self.set_mapping })
+        self._input_ibob_map = {0: [self._ipa0, 0], 1: [self._ipa0, 1],
+                                2: [self._ipa0, 2], 3: [self._ipa0, 3],
+                                4: [self._ipa1, 0], 5: [self._ipa1, 1],
+                                6: [self._ipa1, 2], 7: [self._ipa1, 3]}
+        self._param_handlers = {'_delay_offsets': self._delay_handler,
+                                '_phase_offsets': self._phase_handler}
+        self._command_set.update({2 : self.get_mapping,
+                                  3 : self.set_mapping})
         self.setup()
         self.start_checks_loop(30.0)
 
@@ -190,6 +196,39 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     def stop_checks_loop(self):
         self._checks_stopevent.set()
         self._checks_thread.join()
+
+    @debug
+    def _delay_handler(self, mode, ibob, ibob_input, value=None):
+        adc_per_ns = 1.024
+        regname = 'delay%d' % ibob_input
+        if mode=='get':
+            regvalue = ibob.regread(regname)
+            if regvalue < 64:
+                regvalue += 2**17
+            return ((regvalue-64)/(16*adc_per_ns)) % (2**17)
+        elif mode=='set':
+            regvalue = (round(16*adc_per_ns*value)+64) % (2**17)
+            ibob.regwrite(regname, int(regvalue))
+            return self._delay_handler('get', ibob, ibob_input)
+
+    @debug
+    def _phase_handler(self, mode, ibob, ibob_input, value=None):
+        return 0.0
+
+    def get_value(self, param, antenna):
+        try:
+            ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
+            return self._param_handlers[param]('get', ibob, ibob_input)
+        except KeyError:
+            self.logger.warning('Parameter handler not found! Defaulting...')
+            return BasicTCPServer.get_value(self, param, antenna)
+
+    def set_value(self, param, antenna, value):
+        try:
+            ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
+            return self._param_handlers[param]('set', ibob, ibob_input, value)
+        except KeyError:
+            return BasicTCPServer.set_value(self, param, antenna, value)
 
     @info
     def get_mapping(self, args):

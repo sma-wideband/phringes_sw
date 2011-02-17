@@ -473,6 +473,7 @@ class BasicTCPServer(ThreadingTCPServer):
     @debug
     def set_value(self, param, index, value):
         getattr(self, param)[index] = value
+        return value
 
     @debug
     def set_values(self, name, args, type='f'):
@@ -490,8 +491,7 @@ class BasicTCPServer(ThreadingTCPServer):
                 antenna, value = unpack('!B'+type, args[p*pair_size:pair_size*(p+1)])
                 # if antenna is value, set it
                 if antenna in self._antennas:
-                    self.set_value('_'+name, antenna, value)
-                    values[antenna] = value
+                    values[antenna] = self.set_value('_'+name, antenna, value)
                 else:
                     errors.append(antenna)
                     err_code = -1
