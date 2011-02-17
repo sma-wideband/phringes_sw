@@ -763,21 +763,21 @@ class BasicInterfaceClient(BasicNetworkClient):
             raise Exception, "error setting integration time!"
 
     @debug
-    def _get_values(self, command, *antennas):
+    def _get_values(self, command, val_type, val_size, *antennas):
         cmd = pack('!B%dB' % len(antennas), command, *antennas)
         size, err, resp = self._request(cmd)
         if err:
             errors = unpack('!%dB' % len(resp), resp)
             raise Exception, "following antennas not in system: %r" % (errors,)
         else:
-            return unpack('!%df' % (len(resp)/FLOAT_SIZE), resp)
+            return unpack('!%d%s' % (len(resp)/val_size, val_type), resp)
 
     @debug
-    def _set_values(self, command, ant_value_dict):
+    def _set_values(self, command, ant_value_dict, val_type, val_size):
         ant_val = []
         for k, v in ant_value_dict.iteritems():
             ant_val.extend([k, v])
-        cmd = pack('!B' + 'Bf'*(len(ant_val)/2), command, *ant_val)
+        cmd = pack('!B' + ('B%s'%val_type)*(len(ant_val)/2), command, *ant_val)
         size, err, resp = self._request(cmd)
         if err==-1:
             errors = unpack('!%dB' % len(resp), resp)
@@ -785,22 +785,22 @@ class BasicInterfaceClient(BasicNetworkClient):
         elif err==-2:
             raise Exception, "unmatched antenna/value pairs!"
         else:
-            return unpack('!%df' % (len(resp)/FLOAT_SIZE), resp)
+            return unpack('!%d%s' % (len(resp)/val_size, val_type), resp)
 
     @debug
     def get_phase_offsets(self, *antennas):
-        return self._get_values(32, *antennas)
+        return self._get_values(32, 'f', FLOAT_SIZE, *antennas)
 
     @debug
     def set_phase_offsets(self, phase_offsets_dict):
-        return self._set_values(33, phase_offsets_dict)
+        return self._set_values(33, phase_offsets_dict, 'f', FLOAT_SIZE)
 
     @debug
     def get_delay_offsets(self, *antennas):
-        return self._get_values(34, *antennas)
+        return self._get_values(34, 'f', FLOAT_SIZE, *antennas)
 
     def set_delay_offsets(self, delay_offsets_dict):
-        return self._set_values(35, delay_offsets_dict)
+        return self._set_values(35, delay_offsets_dict, 'f', FLOAT_SIZE)
 
     @debug
     def shutdown(self):

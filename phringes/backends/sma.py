@@ -30,6 +30,8 @@ from basic import (
     BasicCorrelationProvider,
     BasicRequestHandler,
     BasicTCPServer,
+    BasicInterfaceClient,
+    BYTE_SIZE,
 )
 
 
@@ -77,7 +79,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BEE2CorrelationProvider,
-                 antennas=range(8), correlator_lags=32, 
+                 antennas=range(1, 9), correlator_lags=32, 
                  include_baselines='*-*', initial_int_time=16, 
                  analog_bandwidth=512000000.0, antenna_diameter=3,
                  bee2_host='b02.ata.pvt', bee2_port=7147,
@@ -101,9 +103,10 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._ipa0 = IBOBClient(ipa_hosts[0], port=23)
         self._ipa1 = IBOBClient(ipa_hosts[1], port=23)
         self._dbe = IBOBClient(dbe_host, port=23)
-        self._ibobs = {'ipa0': self._ipa0,
-                       'ipa1': self._ipa1,
-                       'dbe': self._dbe}
+        self._ibobs = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe}
+        self._mapping = dict((a, a-1) for a in self._antennas)
+        self._command_set.update({ 2 : self.get_mapping,
+                                   3 : self.set_mapping })
         self.setup()
         self.start_checks_loop(30.0)
 
@@ -187,3 +190,26 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     def stop_checks_loop(self):
         self._checks_stopevent.set()
         self._checks_thread.join()
+
+    @info
+    def get_mapping(self, args):
+        """ inst.get_mapping(ant=[1,2,3,4,...]) -> values=[4,5,6,7,...]
+        Get mapping of antennas to input numbers. """
+        return self.get_values('mapping', args, type='B')
+
+    @info
+    def set_mapping(self, args):
+        """ inst.set_delay_offsets(ant_val=[1,0,2,1,3,2,...]) -> values=[0,1,2,...]
+        Set the mapping of antennas to input numbers. """
+        return self.set_values('mapping', args, type='B')
+
+
+class SubmillimeterArrayClient(BasicInterfaceClient):
+
+    @debug
+    def get_mapping(self, *antennas):
+        return self._get_values(2, 'B', BYTE_SIZE, *antennas)
+
+    @debug
+    def set_mapping(self, mapping_dict):
+        return self._set_values(3, mapping_dict, 'B', BYTE_SIZE)
