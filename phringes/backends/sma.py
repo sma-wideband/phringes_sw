@@ -77,7 +77,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BEE2CorrelationProvider,
-                 n_antennas=8, correlator_lags=32, 
+                 antennas=range(8), correlator_lags=32, 
                  include_baselines='*-*', initial_int_time=16, 
                  analog_bandwidth=512000000.0, antenna_diameter=3,
                  bee2_host='b02.ata.pvt', bee2_port=7147,
@@ -90,7 +90,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         the BasicTCPServer documentation for more detailed information."""
         BasicTCPServer.__init__(self, address, handler=handler, 
                                 correlator=correlator, correlator_lags=correlator_lags, 
-                                n_antennas=n_antennas, initial_int_time=initial_int_time,
+                                antennas=antennas, initial_int_time=initial_int_time,
                                 antenna_diameter=antenna_diameter, analog_bandwidth=analog_bandwidth, 
                                 include_baselines=include_baselines)
         self._correlator = correlator(self, self._include_baselines, bee2_host, bee2_port, 

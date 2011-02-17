@@ -235,7 +235,7 @@ class BasicTCPServer(ThreadingTCPServer):
     @debug
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BasicCorrelationProvider,
-                 correlator_lags=32, n_antennas=8, 
+                 correlator_lags=32, antennas=range(8), 
                  analog_bandwidth=512000000.0, initial_int_time=16, 
                  antenna_diameter=3, include_baselines='*-*'):
         """ BasicTCPServer(address, handler, correlator, lags, baselines)
@@ -293,21 +293,21 @@ class BasicTCPServer(ThreadingTCPServer):
                               35 : self.set_delay_offsets,
                               255 : self.shutdown }
         self._started = False
-        self._n_antennas = n_antennas
+        self._antennas = antennas
         self._bandwidth = analog_bandwidth
         self._integration_time = initial_int_time
         self._antenna_diameter = antenna_diameter
         self._antenna_area = pi * self._antenna_diameter**2 # m^2
-        self._system_temp = dict((i, 150.0) for i in range(self._n_antennas))
-        self._phases = dict((i, 0.0) for i in range(self._n_antennas))
-        self._phase_offsets = dict((i, 0.0) for i in range(self._n_antennas))
-        self._delays = dict((i, 2000.0) for i in range(self._n_antennas))
-        self._delay_offsets = dict((i, 0.0) for i in range(self._n_antennas))
+        self._system_temp = dict((i, 150.0) for i in self._antennas)
+        self._phases = dict((i, 0.0) for i in self._antennas)
+        self._phase_offsets = dict((i, 0.0) for i in self._antennas)
+        self._delays = dict((i, 2000.0) for i in self._antennas)
+        self._delay_offsets = dict((i, 0.0) for i in self._antennas)
         self._antenna_efficiency = 10**-26 * (
             (0.75 * self._antenna_area) / (2 * K) # K / Jy
         )
         self._include_baselines = parse_includes(
-            include_baselines, range(self._n_antennas)
+            include_baselines, self._antennas
         )
         ThreadingTCPServer.__init__(self, address, handler)
 
@@ -436,61 +436,72 @@ class BasicTCPServer(ThreadingTCPServer):
         self._integration_time = unpack('!I', args)[0]
         return SBYTE.pack(0)
 
-    @info
+    @debug
+    def get_value(self, param, index):
+        return getattr(self, param)[index]
+
+    @debug
     def get_values(self, name, args, type='f'):
         """ inst.get_values(value_name, args, type='f')
         This method is not exposed over TCP but instead processes the variable length
         arguments required by various get requests. This fetches the requested 'variable'
         from the server for the requested set of antennas (no set implies all) and returns
         the value (of the given type) for each requested antenna."""
-        param = getattr(self, '_'+name)
-        if len(args) == 0:
-            antennas = range(self._n_antennas)
-        else:
-            antennas = unpack('!%dB'%len(args), args)
         err_code = 0
         values = []
         errors = []
-        for a in antennas:
-            if a not in param:
-                errors.append(a)
+        # unpack antenna list, if empty assume all antennas
+        antennas = unpack('!%dB'%len(args), args)
+        if not antennas:
+            antennas = self._antennas
+        # check if each requested antenna is in our list of antennas
+        for antenna in antennas:
+            if antenna not in self._antennas:
+                errors.append(antenna)
                 err_code = -1
             else:
-                values.append(param[a])
+                values.append(self.get_value('_'+name, antenna))
+        # atleast one antenna is invalid, return error
         if err_code != 0:
             self.logger.error('following antennas not in the system: %s'%errors)
             return pack('!b%dB'%len(errors), err_code, *errors)
         #self.logger.info('%s requested for antennas %s'%(name, list(antennas)))
         #self.logger.info('%s currently %s'%(name, param))
+        # everything is good, return the list of values
         return pack('!b%d%s'%(len(values), type), err_code, *values)
 
-    @info
+    @debug
+    def set_value(self, param, index, value):
+        getattr(self, param)[index] = value
+
+    @debug
     def set_values(self, name, args, type='f'):
         """ inst.set_values(value_name, args, type='f')
         This method is not exposed over TCP but instead processes the variable length
         arguments required by various set requests. This sets the given 'variable' for
         the given set of antennas to the supplied value of the given type."""
-        param = getattr(self, '_'+name)
-        pair_size = calcsize('!B'+type)
         err_code = 0
         values = {}
         errors = []
+        pair_size = calcsize('!B'+type)
+        # make sure the argument is in pairs (antenna, value)
         if len(args) % pair_size == 0:
             for p in range(len(args)/pair_size):
-                antenna, value = unpack('!B'+type, 
-                                        args[p*pair_size:pair_size*(p+1)])
-                if antenna in param:
+                antenna, value = unpack('!B'+type, args[p*pair_size:pair_size*(p+1)])
+                # if antenna is value, set it
+                if antenna in self._antennas:
+                    self.set_value('_'+name, antenna, value)
                     values[antenna] = value
                 else:
                     errors.append(antenna)
                     err_code = -1
+            # return an error if an antenna is invalid
             if err_code != 0:
                 self.logger.error('following antennas not in the system: %s'%errors)
                 return pack('!b%dB'%len(errors), err_code, *errors)
-            param.update(values)
-            #self.logger.info('%s updated for antennas %s'%(name, list(values.keys())))
-            #self.logger.info('%s currently %s'%(name, param))
+            # otherwise send the values that were written
             return pack('!b%d%s'%(len(values.values()), type), err_code, *values.values())
+        # return an errro if the arguments made no sense
         self.logger.error('unmatched antenna/value pairs!')
         return SBYTE.pack(-2)
     
