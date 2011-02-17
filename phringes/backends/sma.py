@@ -36,7 +36,8 @@ from basic import (
 CORR_OUT = Struct('>32i')
 
 
-class BEE2BorphError(Exception): pass
+class BEE2BorphError(Exception):
+    pass
 
 
 class BEE2CorrelationProvider(BasicCorrelationProvider):
@@ -57,20 +58,6 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
         self.bee2_port = bee2_port
         self.bee2 = BEE2Client(bee2_host, port=bee2_port)
         self.bee2._connected.wait()
-        self._program(bof)
-
-    @debug
-    def _program(self, bof):
-        """ Update the list of available bitstreams and program
-        the  BEE2 corner chip with the requested image."""
-        self.bofs = self.bee2.listbof()
-        if bof in self.bofs:
-            self.bee2.progdev(bof)
-            self.logger.info("successfully programmed '%s'" %bof)
-        else:
-            err_msg = "'%s' not available! Check the BOF path." %bof
-            self.logger.error(err_msg)
-            raise BEE2BorphError(err_msg)
 
     def correlate(self):
         """ This overloads 'BasicCorrelationProvider.correlate'
@@ -108,7 +95,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 include_baselines=include_baselines)
         self._correlator = correlator(self, self._include_baselines, bee2_host, bee2_port, 
                                       lags=correlator_lags, bof=correlator_bitstream)
-        self._bee2 = BEE2Client(bee2_host, bee2_port)
+        self.bee2_host, self.bee2_port, self.bee2_bitstream = bee2_host, bee2_port, correlator_bitstream
+        self._bee2 = BEE2Client(bee2_host, port=bee2_port)
+        self._bee2._connected.wait()
         self._ipa0 = IBOBClient(ipa_hosts[0], port=23)
         self._ipa1 = IBOBClient(ipa_hosts[1], port=23)
         self._dbe = IBOBClient(dbe_host, port=23)
@@ -134,6 +123,20 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._dbe.regwrite('insel', 0)
 
     @debug
+    def _setup_BEE2(self):
+        for port in [7147, 7148, 7149, 7150]:
+            bee2 = BEE2Client(self.bee2_host, port=port)
+            bee2._connected.wait()
+            try:
+                bee2.listdev()
+                self.logger.info('BEE2 already programmed. Leaving alone...')
+            except:
+                self.logger.info('BEE2 not programmed! Programming now...')
+                bee2.progdev(self.bee2_bitstream)
+                sleep(5)
+            bee2.stop()
+
+    @debug
     def _check_XAUI(self):
         boards = {'DBE': (self._dbe, '/'),
                   'BEE2': (self._bee2, '_')}
@@ -143,7 +146,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             for xaui in ['xaui0', 'xaui1']:
                 prefix = xaui+regsep
                 if board.regread(prefix+'rx_linkdown'):
-                    self.logger.error('DBE %s link is down!' % xaui)
+                    self.logger.error(
+                        '{board} {0}link is down!'.format(xaui, board=board_name)
+                        )
                 period = board.regread(prefix+'period')
                 period_err = board.regread(prefix+'period_err')
                 period_err_cnt = board.regread(prefix+'period_err_cnt')
@@ -156,6 +161,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._setup_IPA(0)
         self._setup_IPA(1)
         self._setup_DBE()
+        self._setup_BEE2()
 
     @info
     def run_checks(self):

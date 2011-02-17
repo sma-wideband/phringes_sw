@@ -66,16 +66,16 @@ if options.logfile:
     logfile.setFormatter(formatter)
     logger.addHandler(logfile)
 
+bee2_host = 'bee2'
 bee2_bitstream = 'bee2_complex_corr.bof'
-bee2_host = '128.171.116.127'
 if options.block=="high":
     bee2_port = 7147
     ipa_hosts = ('ipahi0', 'ipahi1')
     dbe_host = 'dbehi'
 elif options.block=='low':
-    bee2_port = 7148
-    ipa_hosts = ('169.254.128.5', '169.254.128.4')
-    dbe_host = '169.254.128.1'
+    bee2_port = 7150
+    ipa_hosts = ('ipalo0', 'ipalo1')
+    dbe_host = 'dbelo'
 
 HOST, PORT = options.host, options.port
 server = SubmillimeterArrayTCPServer((HOST, PORT), include_baselines=options.include_baselines,
