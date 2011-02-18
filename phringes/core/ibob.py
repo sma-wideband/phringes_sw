@@ -59,6 +59,11 @@ class IBOBClient(BasicTCPClient):
         )
 
     @debug
+    def tinysh(self, command):
+        retparser = lambda buf: repr(buf)
+        return self._async_command(command, [], {}, "", retparser, 1)
+
+    @debug
     def reconnect(self):
         self._close_socket()
         self._open_socket()

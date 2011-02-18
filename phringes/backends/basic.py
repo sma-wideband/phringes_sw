@@ -18,6 +18,7 @@ from time import time, sleep
 from struct import Struct, pack, unpack, calcsize
 from SocketServer import ThreadingTCPServer, BaseRequestHandler
 from threading import Thread, RLock, Event
+from Queue import Queue
 from socket import error as SocketError
 from socket import timeout as SocketTimeout
 from socket import (
@@ -656,20 +657,22 @@ class BasicNetworkClient:
             self.logger.error("socket has been closed!")
             raise SocketError, "socket has been closed!"           
         buf = ""
-        while len(buf) < resp_size:
+        while True:#len(buf) < resp_size:
             try:
                 data = self._sock_recv(MAX_REQUEST_SIZE)
                 if not data:
                     raise NullPacketError, "socket sending Null strings!"
                 buf += data
                 self.logger.debug("buffer: %r" % buf)
+                if len(data) < MAX_REQUEST_SIZE:
+                    return buf
             except SocketTimeout:
                 self.logger.warning("socket timed out on recv!")
                 raise NotRespondingError, "socket not responding!"
             except SocketError:
                 self.logger.error("client has been closed!")
                 raise ClientClosedError, "client has been closed!"           
-        return buf
+        #return buf
 
 
 class BasicInterfaceClient(BasicNetworkClient):
@@ -850,3 +853,13 @@ class BasicTCPClient(BasicNetworkClient):
         except BasicNetworkError:
             self.logger.error("errors occured, reconnecting...")
             self.reconnect()
+
+    @debug
+    def _async_command(self, cmd, args, argsdict, argfmt, retparser, retsize):
+        """ _async_command returns immediately and eventually stores the output
+        of its command in inst.async_reply"""
+        queue = Queue()
+        def async_thread():
+            queue.put(self._command(cmd, args, argsdict, argfmt, retparser, retsize))
+        Thread(target=async_thread).start()
+        return queue
