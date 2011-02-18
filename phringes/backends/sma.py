@@ -32,7 +32,7 @@ from basic import (
     BasicRequestHandler,
     BasicTCPServer,
     BasicInterfaceClient,
-    BYTE_SIZE,
+    BYTE_SIZE, FLOAT_SIZE,
 )
 
 
@@ -111,9 +111,12 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 4: [self._ipa1, 0], 5: [self._ipa1, 1],
                                 6: [self._ipa1, 2], 7: [self._ipa1, 3]}
         self._param_handlers = {'_delay_offsets': self._delay_handler,
-                                '_phase_offsets': self._phase_handler}
+                                '_phase_offsets': self._phase_handler,
+                                '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
-                                  3 : self.set_mapping})
+                                  3 : self.set_mapping,
+                                  36: self.get_gains,
+                                  37: self.set_gains})
         self.setup()
         self.start_checks_loop(30.0)
 
@@ -157,7 +160,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                 prefix = xaui+regsep
                 if board.regread(prefix+'rx_linkdown'):
                     self.logger.error(
-                        '{board} {0}link is down!'.format(xaui, board=board_name)
+                        '{board} {0} link is down!'.format(xaui, board=board_name)
                         )
                 period = board.regread(prefix+'period')
                 period_err = board.regread(prefix+'period_err')
@@ -224,6 +227,17 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             ibob.regwrite(regname, int(regvalue))
             return self._phase_handler('get', ibob, ibob_input)
 
+    @debug
+    def _gain_handler(self, mode, ibob, ibob_input, value=None):
+        regname = 'gain%d' % ibob_input
+        if mode=='get':
+            regvalue = ibob.regread(regname)
+            return (regvalue % 256) * 2**-7
+        elif mode=='set':
+            regvalue = round(value * 2**7) % 256
+            ibob.regwrite(regname, int(regvalue))
+            return self._gain_handler('get', ibob, ibob_input)
+
     def get_value(self, param, antenna):
         try:
             ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
@@ -251,6 +265,18 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         Set the mapping of antennas to input numbers. """
         return self.set_values('mapping', args, type='B')
 
+    @info
+    def get_gains(self, args):
+        """ inst.get_gains(ant=[1,2,3,4,...]) -> values=[1.0, 1.0, 1.0,...]
+        Get the pre-sum gains. """
+        return self.get_values('gains', args, type='f')
+
+    @info
+    def set_gains(self, args):
+        """ inst.set_gains(ant_val=[1,1.0,2,1.0,3,1.0,...]) -> values=[0,1,2,...]
+        Set the pre-sum gains. """
+        return self.set_values('gains', args, type='f')
+
 
 class SubmillimeterArrayClient(BasicInterfaceClient):
 
@@ -261,3 +287,11 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
     @debug
     def set_mapping(self, mapping_dict):
         return self._set_values(3, mapping_dict, 'B', BYTE_SIZE)
+
+    @debug
+    def get_gains(self, *antennas):
+        return self._get_values(36, 'f', FLOAT_SIZE, *antennas)
+
+    @debug
+    def set_gains(self, gains_dict):
+        return self._set_values(37, gains_dict, 'f', FLOAT_SIZE)
