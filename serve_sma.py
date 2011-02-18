@@ -69,11 +69,11 @@ if options.logfile:
 bee2_host = 'bee2'
 bee2_bitstream = 'bee2_complex_corr.bof'
 if options.block=="high":
-    bee2_port = 7147
+    bee2_port = 7150
     ipa_hosts = ('ipahi0', 'ipahi1')
     dbe_host = 'dbehi'
 elif options.block=='low':
-    bee2_port = 7150
+    bee2_port = 7147
     ipa_hosts = ('ipalo0', 'ipalo1')
     dbe_host = 'dbelo'
 

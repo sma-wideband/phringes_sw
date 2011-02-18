@@ -32,6 +32,7 @@ from basic import (
     BasicRequestHandler,
     BasicTCPServer,
     BasicInterfaceClient,
+    BYTE, SBYTE, FLOAT,
     BYTE_SIZE, FLOAT_SIZE,
 )
 
@@ -104,6 +105,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._ipa0 = IBOBClient(ipa_hosts[0], port=23)
         self._ipa1 = IBOBClient(ipa_hosts[1], port=23)
         self._dbe = IBOBClient(dbe_host, port=23)
+        self._ipas = {'ipa0': self._ipa0, 'ipa1': self._ipa1}
         self._ibobs = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe}
         self._mapping = dict((a, a-1) for a in self._antennas)
         self._input_ibob_map = {0: [self._ipa0, 0], 1: [self._ipa0, 1],
@@ -115,21 +117,36 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
                                   3 : self.set_mapping,
+                                  12: self.reset_xaui,
+                                  13: self.arm_sync,
                                   36: self.get_gains,
                                   37: self.set_gains})
         self.setup()
-        self.sync_all()
+        #self.sync_all()
         self.start_checks_loop(30.0)
 
     def shutdown(self, args):
         self.stop_checks_loop()
         return BasicTCPServer.shutdown(self, args)
 
+    @info
+    def reset_xaui(self, args):
+        for board in [self._dbe, self._bee2]:
+            board.regwrite('xaui_rst', 2)
+            board.regwrite('xaui_rst', 0)
+        return BYTE.pack(0)
+
+    @info
+    def arm_sync(self, args):
+        self.sync_all()
+        return BYTE.pack(0)
+
     @debug
     def _setup_IPA(self, ipanum):
         ipa = self._ibobs['ipa%d'%ipanum]
         ipa.regwrite('insel', 0)
         ipa.regwrite('smasel', 0)
+        ipa.regwrite('monsel', 2)
         ipa.regwrite('start_xaui', 1)
 
     @debug
@@ -151,10 +168,21 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             bee2.stop()
 
     @debug
-    def _sync_ibobs(self):
+    def _sync_1pps(self):
         queues = {}
         for name, ibob in self._ibobs.iteritems():
             queues[name] = ibob.tinysh('arm1pps')
+        for name, queue in queues.iteritems():
+            last_line = queue.get().splitlines()[-2]
+            # should check if they were actually sync'ed
+            # here instead of just logging about it
+            ibob.logger.info(last_line)
+
+    @debug
+    def _sync_sowf(self):
+        queues = {}
+        for name, ibob in self._ipas.iteritems():
+            queues[name] = ibob.tinysh('armsowf')
         for name, queue in queues.iteritems():
             last_line = queue.get().splitlines()[-2]
             # should check if they were actually sync'ed
@@ -178,7 +206,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                 period_err = board.regread(prefix+'period_err')
                 period_err_cnt = board.regread(prefix+'period_err_cnt')
                 linkdown_cnt = board.regread(prefix+'linkdown_cnt')
-                self.logger.info(msg.format(xaui, period, period_err_cnt,
+                board.logger.info(msg.format(xaui, period, period_err_cnt,
                                             linkdown_cnt, board=board_name))
 
     @info
@@ -190,7 +218,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def sync_all(self):
-        self._sync_ibobs()
+        self._sync_1pps()
+        self._sync_sowf()
 
     @info
     def run_checks(self):
@@ -295,6 +324,20 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
 
 class SubmillimeterArrayClient(BasicInterfaceClient):
+
+    @debug
+    def reset_xaui(self):
+        cmd = BYTE.pack(12)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.warning("error resetting XAUIs!")
+
+    @debug
+    def arm_sync(self):
+        cmd = BYTE.pack(13)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.warning("error arming syncs!")
 
     @debug
     def get_mapping(self, *antennas):

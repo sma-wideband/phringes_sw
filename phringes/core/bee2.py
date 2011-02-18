@@ -30,6 +30,8 @@ class BEE2Client(BlockingClient):
         katcp_logger.addHandler(NullHandler())
         BlockingClient.__init__(self, host, port, tb_limit=tb_limit,
                                 timeout=timeout, logger=katcp_logger)
+        logger_name = "%s(%s:%r)" %(self.__class__.__name__, host, port)
+        self.logger = logging.getLogger(logger_name)
         self.start(daemon=True)
 
     @debug
