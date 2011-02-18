@@ -118,6 +118,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   36: self.get_gains,
                                   37: self.set_gains})
         self.setup()
+        self.sync_all()
         self.start_checks_loop(30.0)
 
     def shutdown(self, args):
@@ -150,6 +151,17 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             bee2.stop()
 
     @debug
+    def _sync_ibobs(self):
+        queues = {}
+        for name, ibob in self._ibobs.iteritems():
+            queues[name] = ibob.tinysh('arm1pps')
+        for name, queue in queues.iteritems():
+            last_line = queue.get().splitlines()[-2]
+            # should check if they were actually sync'ed
+            # here instead of just logging about it
+            ibob.logger.info(last_line)
+
+    @debug
     def _check_XAUI(self):
         boards = {'DBE': (self._dbe, '/'),
                   'BEE2': (self._bee2, '_')}
@@ -175,6 +187,10 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._setup_IPA(1)
         self._setup_DBE()
         self._setup_BEE2()
+
+    @debug
+    def sync_all(self):
+        self._sync_ibobs()
 
     @info
     def run_checks(self):

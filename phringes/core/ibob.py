@@ -60,7 +60,7 @@ class IBOBClient(BasicTCPClient):
 
     @debug
     def tinysh(self, command):
-        retparser = lambda buf: repr(buf)
+        retparser = lambda buf: buf
         return self._async_command(command, [], {}, "", retparser, 1)
 
     @debug
