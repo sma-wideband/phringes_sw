@@ -60,6 +60,9 @@ class BasicCorrelationProvider:
     from a BasicTCPServer instance and sends out one UDP
     data packet per baseline to a list of subscribers."""
 
+    _header_struct = Struct('!fBBBB')
+    _header_size = _header_struct.size
+
     @debug
     def __init__(self, server, include_baselines, lags=32):
         """ BasicCorrelationProvider(server, include, lags=32) -> inst
@@ -71,8 +74,6 @@ class BasicCorrelationProvider:
         self._lags = lags
         self._correlations = {}
         self._include_baselines = include_baselines
-        self._header_struct = Struct('!fBB')
-        self._header_size = self._header_struct.size
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @debug
@@ -136,10 +137,14 @@ class BasicCorrelationProvider:
         """ inst.broadcast() -> None
         Constructs UDP packets and sends one packet per baseline per
         subscriber."""
+        current = 0
+        total = len(self._correlations.keys())
         for baseline, correlation in self._correlations.iteritems():
             data = correlation.dumps() # numpy serialization
             header = self._header_struct.pack(self._last_correlation,
-                                              baseline[0], baseline[1])
+                                              baseline[0], baseline[1],
+                                              current, total)
+            current += 1
             for subscriber in self.subscribers:
                 udp_sock = socket(AF_INET, SOCK_DGRAM)
                 udp_sock.sendto(header+data, subscriber)

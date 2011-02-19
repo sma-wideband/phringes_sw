@@ -33,8 +33,7 @@ from phringes.core.loggers import (
 from basic import (
     BasicCorrelationProvider, BasicRequestHandler,
     BasicTCPServer, BasicInterfaceClient, BasicUDPClient,
-    BYTE, SBYTE, FLOAT,
-    BYTE_SIZE, FLOAT_SIZE,
+    BYTE, SBYTE, FLOAT, BYTE_SIZE, FLOAT_SIZE,
 )
 
 
@@ -46,8 +45,6 @@ PERIOD_SYNCSEL = {0: PERIOD_1024PPS,
                   1: PERIOD_HB,
                   2: PERIOD_SOWF,
                   3: PERIOD_1PPS}
-
-CORR_OUT = Struct('>32i')
 
 
 class BEE2BorphError(Exception):
@@ -115,17 +112,15 @@ class BEE2CorrelatorClient(BasicUDPClient):
 
     def __init__(self, host, port, size=16):
         BasicUDPClient.__init__(self, host, port)
-        self._header_struct = Struct('!fBB')
-        self._header_size = self._header_struct.size
-        self._corr_struct = Struct('!{0}i{0}i'.format(size))
-        self._corr_size = self._corr_struct.size
+        self._header_struct = BEE2CorrelationProvider._header_struct
+        self._header_size = BEE2CorrelationProvider._header_size
         self.size = size
 
     @debug
     def get_correlation(self):
         pkt = self._request('', 0) # blocks until packet is received
-        corr_time, refant, other = self._header_struct.unpack(pkt[:self._header_size])
-        return loads(pkt[self._header_size:])
+        corr_time, refant, other, current, total = self._header_struct.unpack(pkt[:self._header_size])
+        return corr_time, refant, other, current, total, loads(pkt[self._header_size:])
 
 
 class SubmillimeterArrayTCPServer(BasicTCPServer):
