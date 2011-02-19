@@ -22,10 +22,11 @@ from Queue import Queue
 from socket import error as SocketError
 from socket import timeout as SocketTimeout
 from socket import (
-    socket, AF_INET, SOCK_STREAM, 
-    SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR,
-    SHUT_RDWR, 
+    socket, AF_INET, SOCK_STREAM, SOCK_DGRAM,
+    SOL_SOCKET, SO_REUSEADDR, SHUT_RDWR, 
     )
+
+from numpy import array as narray
 
 from phringes.core.macros import parse_includes
 from phringes.core.loggers import (
@@ -70,7 +71,8 @@ class BasicCorrelationProvider:
         self._lags = lags
         self._correlations = {}
         self._include_baselines = include_baselines
-        self._DATA_PKT = Struct('!fBB%di'%self._lags)
+        self._header_struct = Struct('!fBB')
+        self._header_size = self._header_struct.size
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @debug
@@ -95,6 +97,10 @@ class BasicCorrelationProvider:
         self.subscribers.remove(address)
 
     @debug
+    def _process(self):
+        self.correlate() # reads the lags
+
+    @debug
     def _provider_loop(self):
         """ Started in a separate thread by inst.start() and runs 
         until inst._stopevent is set by inst.stop(). It can be
@@ -105,41 +111,38 @@ class BasicCorrelationProvider:
         subscribers via inst.broadcast(), and the waits until the next
         appropriate time to correlate given an integration time.
         """
-        self._start_time = time()
-        last_correlation = self._start_time
         while not self._stopevent.isSet():
             with RLock():
-                integration_time = self.server._integration_time
-                self._last_correlation = time()
-                last_correlation = time()
-                self.correlate()
                 self.broadcast()
-            while time()<last_correlation+integration_time\
-                      and not self._stopevent.isSet():
-                sleep(0.1)
+            self._process()
 
-    @debug
+    @info
     def correlate(self):
         """ inst.correlate() -> None
         This must be overloaded to populate the '_correlations'
         member dictionary with valid correlation functions for 
-        every included (i.e. tracked) basline.
+        every included (i.e. tracked) baseline. This should be a
+        numpy array.
         """
+        with RLock():
+            itime = self.server._integration_time
+        self._stopevent.wait(itime)
+        self._last_correlation = time()
         for baseline in self._include_baselines:
-            self._correlations[baseline] = [0]*self._lags
+            self._correlations[baseline] = narray([0]*self._lags*2)
 
-    @debug
+    @info
     def broadcast(self):
         """ inst.broadcast() -> None
         Constructs UDP packets and sends one packet per baseline per
         subscriber."""
         for baseline, correlation in self._correlations.iteritems():
-            data = self._DATA_PKT.pack(self._last_correlation,
-                                       baseline[0], baseline[1],
-                                       *correlation)
+            data = correlation.dumps() # numpy serialization
+            header = self._header_struct.pack(self._last_correlation,
+                                              baseline[0], baseline[1])
             for subscriber in self.subscribers:
                 udp_sock = socket(AF_INET, SOCK_DGRAM)
-                udp_sock.sendto(data, subscriber)
+                udp_sock.sendto(header+data, subscriber)
                 udp_sock.close()
 
     @info
@@ -426,7 +429,7 @@ class BasicTCPServer(ThreadingTCPServer):
         request packet) and returns the current integration time. The return packet
         will have an error code of 0 following by an unsigned byte representing
         the current integration time."""
-        return pack('!bI', 0, self._integration_time)
+        return pack('!bf', 0, self._integration_time)
 
     @info
     def set_integration_time(self, args):
@@ -434,7 +437,7 @@ class BasicTCPServer(ThreadingTCPServer):
         This accepts a single unsigned byte representing the requested integration
         time and for right now always returns an error code of 0 meaning that the
         correlator integration time was set successfully."""
-        self._integration_time = unpack('!I', args)[0]
+        self._integration_time = unpack('!f', args)[0]
         return SBYTE.pack(0)
 
     @debug
@@ -756,11 +759,11 @@ class BasicInterfaceClient(BasicNetworkClient):
         size, err, resp = self._request(cmd)
         if err:
             raise Exception, "error getting integration time!"
-        return unpack('!I', resp)[0]
+        return unpack('!f', resp)[0]
 
     @debug
     def set_integration_time(self, itime):
-        cmd = pack('!BI', 11, itime)
+        cmd = pack('!Bf', 11, itime)
         size, err, resp = self._request(cmd)
         if err:
             raise Exception, "error setting integration time!"
@@ -863,3 +866,31 @@ class BasicTCPClient(BasicNetworkClient):
             queue.put(self._command(cmd, args, argsdict, argfmt, retparser, retsize))
         Thread(target=async_thread).start()
         return queue
+
+
+class BasicUDPClient(BasicNetworkClient):
+    """ This is not _really_ a UDP client but functions as a client
+    to the BasicCorrelationProvider class. """
+
+    def __init__(self, host, port):
+        BasicNetworkClient.__init__(self, host, port)
+        self._open_socket()
+
+    def _open_socket(self):
+        self.sock = socket(AF_INET, SOCK_DGRAM)
+        self.sock.bind(self.address)
+
+    def _sock_recv(self, size):
+        data, addr = self.sock.recvfrom(size)
+        return data
+
+    def _sock_send(self, data):
+        pass
+
+    def _close_socket(self):
+        self.sock.close()
+
+    @debug
+    def reset(self):
+        self._close_socket()
+        self._open_socket()
