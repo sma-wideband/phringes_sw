@@ -8,6 +8,9 @@ from time import time
 from functools import wraps
 
 
+CHAR_MAP = '?'*32 + ''.join(chr(c) for c in range(32, 256))
+
+
 class LoggingDecorator:
     """ Decorator for logging method calls.
     
@@ -56,7 +59,7 @@ class LoggingDecorator:
                 arg_kwarg = argstr
             else:
                 arg_kwarg = ''
-            if response:
+            if response != None:
                 msg = "%s(%s) => %s" % (method_name, arg_kwarg, repr(response))
             else:
                 msg = "%s(%s)" % (method_name, arg_kwarg)
@@ -65,6 +68,7 @@ class LoggingDecorator:
             func_time = (stop_func-start_func)*1000
             logger_time = (stop_logger-start_logger)*1000
             msg += "    [%.3f ms][%.3f ms]" % (func_time, logger_time)
+            msg = msg.translate(CHAR_MAP) # remove special chars
             try:
                 inst.logger.log(self.level, msg)
             except AttributeError:
