@@ -33,7 +33,7 @@ parser.add_option("-p", "--port", action="store", type="int",
                   help="use PORT for accepting TCP connections, defaults to 59999",
                   metavar="PORT")
 parser.add_option("-b", "--baselines", action="store",
-                  dest="include_baselines", default="0-*",
+                  dest="include_baselines", default="6-*",
                   help="include BASELINES, format is N-M or NxM where N/M can either "
                   "be antenna numbers or the wildcard *. So 4-* means all baselines to "
                   "antenna 4", metavar="BASELINES")

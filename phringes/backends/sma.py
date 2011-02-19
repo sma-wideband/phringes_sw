@@ -17,9 +17,12 @@ running on the DDS.
 
 import logging
 from math import pi
-from struct import Struct
+from struct import Struct, pack, unpack
 from threading import Thread, RLock, Event
-from time import asctime, sleep
+from time import time, asctime, sleep
+
+from numpy import array as narray
+from numpy import loads
 
 from phringes.core.bee2 import BEE2Client
 from phringes.core.ibob import IBOBClient
@@ -28,14 +31,21 @@ from phringes.core.loggers import (
     critical, error,
 )
 from basic import (
-    BasicCorrelationProvider,
-    BasicRequestHandler,
-    BasicTCPServer,
-    BasicInterfaceClient,
+    BasicCorrelationProvider, BasicRequestHandler,
+    BasicTCPServer, BasicInterfaceClient, BasicUDPClient,
     BYTE, SBYTE, FLOAT,
     BYTE_SIZE, FLOAT_SIZE,
 )
 
+
+PERIOD_1024PPS = 1./1024
+PERIOD_1PPS = 1.
+PERIOD_HB = (2**19)/52000000.
+PERIOD_SOWF = (2**25)/52000000.
+PERIOD_SYNCSEL = {0: PERIOD_1024PPS,
+                  1: PERIOD_HB,
+                  2: PERIOD_SOWF,
+                  3: PERIOD_1PPS}
 
 CORR_OUT = Struct('>32i')
 
@@ -56,32 +66,73 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
                  bof='bee2_calib_corr.bof'):
         """ Overloaded method which adds some arguments necessary
         for connecting to 'tcpborphserver' running on a BEE2."""
+        self.bram_format = 'rx{other}_{sideband}_{type}'
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info('baselines: %r' % include_baselines)
         BasicCorrelationProvider.__init__(self, server, include_baselines, lags)
-        self.bee2_host = bee2_host
-        self.bee2_port = bee2_port
+        self.bee2_host, self.bee2_port = bee2_host, bee2_port
         self.bee2 = BEE2Client(bee2_host, port=bee2_port)
         self.bee2._connected.wait()
 
-    def correlate(self):
+    def _process(self):
+        self.fringe() # populates all the lags
+
+    @debug
+    def _read_lag(self, other, sideband):
+        bram_real = self.bram_format.format(other=other, sideband=sideband, type='real')
+        bram_imag = self.bram_format.format(other=other, sideband=sideband, type='imag')
+        real = self.bee2.bramread(bram_real, self._lags)
+        imag = self.bee2.bramread(bram_imag, self._lags)
+        return narray([real[i]+imag[i]*1j for i in range(self._lags)])
+
+    @info
+    def fringe(self):
         """ This overloads 'BasicCorrelationProvider.correlate'
         (which does nothing) and enables/resets correlations on
         the BEE2 corner chip as well as setting integration times,
         etc. It then reads the correlations and stores them to be
         broadcast to its list of subscribers."""
-        self.logger.debug('correlate()')
-        integration_time = self.server._integration_time
-        self.logger.info("correlating for %0.2f seconds" %integration_time)
+        with RLock(): # do all server stuff here
+            mapping = self.server._mapping.copy()
+        rev_mapping = dict((v, k) for k, v in mapping.iteritems())
+        refant = rev_mapping[self.bee2.regread('refant')]
+        integ_cnt = self.bee2.regread('integ_cnt')
+        while self.bee2.regread('integ_cnt') <= integ_cnt:
+            self._stopevent.wait(1.0) # 1 second for now
+            if self._stopevent.isSet():
+                return # server requested a stop
+        self._last_correlation = time()
         for baseline in self._include_baselines:
-            pass
-            #self.logger.info('baseline %s, mean %d' %(baseline, self._correlations[baseline].mean()))
+            # currently phringes only supports correlations
+            # to the reference antenna
+            if refant in baseline:
+                refindex = baseline.index(refant)
+                other = mapping[baseline[not refindex]]
+                self._correlations[baseline] = self._read_lag(other, 'usb')
+
+
+class BEE2CorrelatorClient(BasicUDPClient):
+
+    def __init__(self, host, port, size=16):
+        BasicUDPClient.__init__(self, host, port)
+        self._header_struct = Struct('!fBB')
+        self._header_size = self._header_struct.size
+        self._corr_struct = Struct('!{0}i{0}i'.format(size))
+        self._corr_size = self._corr_struct.size
+        self.size = size
+
+    @debug
+    def get_correlation(self):
+        pkt = self._request('', 0) # blocks until packet is received
+        corr_time, refant, other = self._header_struct.unpack(pkt[:self._header_size])
+        return loads(pkt[self._header_size:])
 
 
 class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BEE2CorrelationProvider,
-                 antennas=range(1, 9), correlator_lags=32, 
+                 antennas=range(1, 9), correlator_lags=16, 
                  include_baselines='*-*', initial_int_time=16, 
                  analog_bandwidth=512000000.0, antenna_diameter=3,
                  bee2_host='b02.ata.pvt', bee2_port=7147,
@@ -107,7 +158,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._dbe = IBOBClient(dbe_host, port=23)
         self._ipas = {'ipa0': self._ipa0, 'ipa1': self._ipa1}
         self._ibobs = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe}
-        self._mapping = dict((a, a-1) for a in self._antennas)
+        self._mapping = {6:0, 1:1, 2:2, 3:3, 4:4, 5:5, 7:6, 8:7}
         self._input_ibob_map = {0: [self._ipa0, 0], 1: [self._ipa0, 1],
                                 2: [self._ipa0, 2], 3: [self._ipa0, 3],
                                 4: [self._ipa1, 0], 5: [self._ipa1, 1],
@@ -155,17 +206,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def _setup_BEE2(self):
-        for port in [7147, 7148, 7149, 7150]:
-            bee2 = BEE2Client(self.bee2_host, port=port)
-            bee2._connected.wait()
-            try:
-                bee2.listdev()
-                self.logger.info('BEE2 already programmed. Leaving alone...')
-            except:
-                self.logger.info('BEE2 not programmed! Programming now...')
-                bee2.progdev(self.bee2_bitstream)
-                sleep(5)
-            bee2.stop()
+        self._bee2.regwrite('syncsel', 2)
 
     @debug
     def _sync_1pps(self):
@@ -192,7 +233,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     @debug
     def _check_XAUI(self):
         boards = {'DBE': (self._dbe, '/'),
-                  'BEE2': (self._bee2, '_')}
+                  'BEE': (self._bee2, '_')}
         for board_name, info in boards.iteritems():
             board, regsep = info
             msg = "{board}/{0}: last sync lasted {1} (period errors: {2})(linkdowns: {3})"
@@ -321,6 +362,24 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         """ inst.set_gains(ant_val=[1,1.0,2,1.0,3,1.0,...]) -> values=[0,1,2,...]
         Set the pre-sum gains. """
         return self.set_values('gains', args, type='f')
+
+    def get_integration_time(self, args):
+        """ inst.get_integration_time() -> err_code
+        Overloaded method to get integration time on the BEE2."""
+        itime = self._bee2.regread('integ_time')
+        PERIOD = PERIOD_SYNCSEL[self._bee2.regread('syncsel')]
+        self._integration_time = itime * PERIOD
+        return pack('!bf', 0, self._integration_time)
+
+    def set_integration_time(self, args):
+        """ inst.set_integration_time(time) -> err_code
+        Overloaded method to set the integration time on the BEE2."""
+        itime = unpack('!f', args)[0]
+        PERIOD = PERIOD_SYNCSEL[self._bee2.regread('syncsel')]
+        integ_time = round(itime / PERIOD)
+        self._bee2.regwrite('integ_time', integ_time)
+        self._integration_time = integ_time
+        return SBYTE.pack(0)
 
 
 class SubmillimeterArrayClient(BasicInterfaceClient):
