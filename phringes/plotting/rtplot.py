@@ -52,6 +52,11 @@ class RealTimePlot(FigureCanvasTkAgg):
             xy = array([append(x, x[::-1]), append(y, ybottom)]).transpose()
             l.fill_under = self.axes.add_patch(Polygon(xy, **kwargs))
 
+    def update_line(self, line, xdata, ydata):
+        update_func = getattr(self, '_data_'+self.mode)
+        line.set(xdata=update_func(line.get_xdata(), xdata),
+                 ydata=update_func(line.get_ydata(), ydata))
+
     def update(self, *args, **kwargs):
         xmax = None
         ysum = 0.
@@ -63,10 +68,9 @@ class RealTimePlot(FigureCanvasTkAgg):
             ydata = line.get_ydata()
             ysum = ysum + sum(ydata)
             ynum = ynum + len(ydata)
-            update_func = getattr(self, '_data_'+self.mode)
-            line.set(xdata=update_func(xdata, args[2*i]),
-                     ydata=update_func(ydata, args[2*i+1]),
-                     **kwargs)
+            self.update_line(line, 
+                             args[2*i],
+                             args[2*i+1])
         self.axes.relim()
         self.axes.autoscale_view()
         if 'xspan' in self.kwargs:
