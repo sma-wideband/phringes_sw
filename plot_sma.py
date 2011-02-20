@@ -2,6 +2,7 @@
 
 
 import logging
+from math import pi
 from time import time
 from struct import Struct
 from socket import gethostbyname, gethostname
@@ -39,7 +40,7 @@ except:
 server.start_correlator()
 
 f = arange(-8, 8)
-corr = RealTimePlot(master=frame, mode='replace', ylim=[-2**31, 2**31], xlim=[f.min(), f.max()])
+corr = RealTimePlot(master=frame, mode='replace', ylim=[-pi, pi], xlim=[f.min(), f.max()])
 corr.tkwidget.pack(fill=BOTH, expand=1)
 
 def quit_mon():
@@ -52,7 +53,7 @@ quit.pack(side=BOTTOM)
 
 def update_plots(widget, baselines):
     try:
-        corr_time, left, right, current, total, lags = correlator.get_correlation()
+        corr_time, left, right, current, total, phase = correlator.get_correlation()
         baseline = left, right
         correlator.logger.info('received baseline %s' % repr(baseline))
     except NoCorrelations:
@@ -62,13 +63,12 @@ def update_plots(widget, baselines):
         corr.axes.grid()
         corr.axes.set_xlabel('Lag', size='large')
         corr.axes.set_ylabel('Correlation Function', size='large')
-        line = corr.plot(f, abs(lags), linewidth=1, label=repr(baseline))[0]
+        line = corr.plot(f, phase, '.', linewidth=1, label=repr(baseline))[0]
         baselines[baseline] = line
     else:
         corr.axes.legend()
         line = baselines[baseline]
-        corr.update_line(line, f, abs(lags))
-        corr.draw() # must be called since we're not using update(..)
+        corr.update_line(line, f, phase)
     widget.update()
     widget.after_idle(update_plots, widget, baselines)
 

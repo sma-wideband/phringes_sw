@@ -22,8 +22,12 @@ from struct import Struct, pack, unpack
 from threading import Thread, RLock, Event
 from Queue import Queue
 
+from numpy.random import randint
+from numpy.fft import fft, fftshift
 from numpy import array as narray
-from numpy import loads
+from numpy import (
+    angle, concatenate, loads
+    )
 
 from phringes.core.bee2 import BEE2Client
 from phringes.core.ibob import IBOBClient
@@ -83,6 +87,11 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
         imag = self.bee2.bramread(bram_imag, self._lags)
         return narray([real[i]+imag[i]*1j for i in range(self._lags)])
 
+    @debug
+    def get_visibility(self, lags):
+        shifted = concatenate((lags[8:], lags[1:8]))
+        return concatenate(([0], fftshift(fft(shifted))))
+
     @info
     def fringe(self):
         """ This overloads 'BasicCorrelationProvider.correlate'
@@ -106,7 +115,10 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
             if refant in baseline:
                 refindex = baseline.index(refant)
                 other = mapping[baseline[not refindex]]
-                self._correlations[baseline] = self._read_lag(other, 'usb')
+                lags = self._read_lag(other, 'usb')
+                span = 100 * (lags.max() - lags.min()) / (2**31)
+                self.logger.info('baseline %s: span=%.4f%%' % (repr(baseline), span))
+                self._correlations[baseline] = angle(self.get_visibility(lags))
 
 
 class BEE2CorrelatorClient(BasicUDPClient):
@@ -185,6 +197,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   3 : self.set_mapping,
                                   12: self.reset_xaui,
                                   13: self.arm_sync,
+                                  14: self.noise_mode,
                                   36: self.get_gains,
                                   37: self.set_gains})
         self.setup()
@@ -378,6 +391,26 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         Set the pre-sum gains. """
         return self.set_values('gains', args, type='f')
 
+    @info
+    def noise_mode(self, args):
+        """ inst.noise_mode(bool)
+        If bool=True, selects internally generated noise.
+        If bool=False, selects external ADC data (normal)."""
+        insel = unpack('!B', args[0])[0]
+        seed = (randint(0, 2**16-1) << 16) + randint(0, 2**16-1)
+        for name, ibob in self._ipas.iteritems():
+            ibob.regwrite('noise/seed/0', seed)
+            ibob.regwrite('noise/seed/1', seed)
+            ibob.regwrite('noise/seed/2', seed)
+            ibob.regwrite('noise/seed/3', seed)
+        for name, ibob in self._ipas.iteritems():
+            ibob.regwrite('noise/arm', 0)
+        for name, ibob in self._ipas.iteritems():
+            ibob.regwrite('noise/arm', 0x1111)
+        for name, ibob in self._ipas.iteritems():
+            ibob.regwrite('insel', insel*0x55555555)
+        return SBYTE.pack(0)
+
     def get_integration_time(self, args):
         """ inst.get_integration_time() -> err_code
         Overloaded method to get integration time on the BEE2."""
@@ -428,3 +461,10 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
     @debug
     def set_gains(self, gains_dict):
         return self._set_values(37, gains_dict, 'f', FLOAT_SIZE)
+
+    @debug
+    def noise_mode(self, mode=True):
+        cmd = pack('!BB', 14, mode)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.warning("error setting noise mode!")
