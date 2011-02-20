@@ -873,6 +873,10 @@ class BasicTCPClient(BasicNetworkClient):
         return queue
 
 
+class NoCorrelations(Exception):
+    pass
+
+
 class BasicUDPClient(BasicNetworkClient):
     """ This is not _really_ a UDP client but functions as a client
     to the BasicCorrelationProvider class. """
@@ -883,6 +887,7 @@ class BasicUDPClient(BasicNetworkClient):
 
     def _open_socket(self):
         self.sock = socket(AF_INET, SOCK_DGRAM)
+        self.sock.setblocking(False)
         self.sock.bind(self.address)
 
     def _sock_recv(self, size):
@@ -895,6 +900,20 @@ class BasicUDPClient(BasicNetworkClient):
     def _close_socket(self):
         self.sock.close()
 
+    def _request(self, data, resp_size):
+        buf = ""
+        while True:
+            try:
+                data = self._sock_recv(MAX_REQUEST_SIZE)
+                if not data:
+                    raise NullPacketError, "socket sending Null strings!"
+                buf += data
+                self.logger.debug("buffer: %r" % buf)
+                if len(data) < MAX_REQUEST_SIZE:
+                    return buf
+            except SocketError:
+                raise NoCorrelations
+            
     @debug
     def reset(self):
         self._close_socket()

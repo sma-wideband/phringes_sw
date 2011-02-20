@@ -15,6 +15,7 @@ from numpy import (
     )
 
 import phringes.backends.sma as sma
+from phringes.backends.basic import NoCorrelations
 from phringes.plotting.rtplot import RealTimePlot
 
 
@@ -36,7 +37,6 @@ try:
 except:
     pass
 server.start_correlator()
-lag_queue = correlator.start()
 
 f = arange(-8, 8)
 corr = RealTimePlot(master=frame, mode='replace', ylim=[-2**31, 2**31], xlim=[f.min(), f.max()])
@@ -53,10 +53,10 @@ quit.grid()#(side=BOTTOM)
 
 def update_plots(widget, total_updates):
     try:
-        corr_time, left, right, current, total, lags = lag_queue.get_nowait()
+        corr_time, left, right, current, total, lags = correlator.get_correlation()
         baseline = left, right
         correlator.logger.info('(%d) received lags for baseline %s' % (total_updates, repr(baseline)))
-    except QueueEmpty:
+    except NoCorrelations:
         widget.after_idle(update_plots, widget, total_updates)
         return
     if 1 in baseline:
