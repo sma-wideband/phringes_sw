@@ -4,6 +4,7 @@
 import logging
 from time import time
 from struct import Struct
+from socket import gethostbyname, gethostname
 from Tkinter import Tk, StringVar, Frame,\
      OptionMenu, Label, Button, BOTTOM, LEFT, RIGHT, BOTH
 
@@ -29,7 +30,7 @@ root.wm_title("Correlator Monitor")
 frame = Frame(root)
 frame.pack(fill=BOTH, expand=1)
 
-correlator = sma.BEE2CorrelatorClient('0.0.0.0', 8332)
+correlator = sma.BEE2CorrelatorClient(gethostbyname(gethostname()), 8332)
 server = sma.SubmillimeterArrayClient('128.171.116.126', 59999)
 try:
     server.subscribe(correlator.host, correlator.port)
