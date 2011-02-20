@@ -116,9 +116,9 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
                 refindex = baseline.index(refant)
                 other = mapping[baseline[not refindex]]
                 lags = self._read_lag(other, 'usb')
-                span = 100 * (lags.max() - lags.min()) / (2**31)
+                span = 100 * (abs(lags).max() - abs(lags).min()) / (2**31)
                 self.logger.info('baseline %s: span=%.4f%%' % (repr(baseline), span))
-                self._correlations[baseline] = angle(self.get_visibility(lags))
+                self._correlations[baseline] = narray([lags, self.get_visibility(lags)])
 
 
 class BEE2CorrelatorClient(BasicUDPClient):
@@ -192,6 +192,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 6: [self._ipa1, 2], 7: [self._ipa1, 3]}
         self._param_handlers = {'_delay_offsets': self._delay_handler,
                                 '_phase_offsets': self._phase_handler,
+                                '_thresholds' : self._thresh_handler,
                                 '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
                                   3 : self.set_mapping,
@@ -199,7 +200,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   13: self.arm_sync,
                                   14: self.noise_mode,
                                   36: self.get_gains,
-                                  37: self.set_gains})
+                                  37: self.set_gains,
+                                  38: self.get_thresholds,
+                                  39: self.set_thresholds})
         self.setup()
         #self.sync_all()
         self.start_checks_loop(30.0)
@@ -352,6 +355,15 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             ibob.regwrite(regname, int(regvalue))
             return self._gain_handler('get', ibob, ibob_input)
 
+    @debug
+    def _thresh_handler(self, mode, ibob, ibob_input, value=None):
+        regname = 'quant/thresh%d' % ibob_input
+        if mode=='get':
+            return ibob.regread(regname)
+        elif mode=='set':
+            ibob.regwrite(regname, value)
+            return self._thresh_handler('get', ibob, ibob_input)
+
     def get_value(self, param, antenna):
         try:
             ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
@@ -361,8 +373,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             return BasicTCPServer.get_value(self, param, antenna)
 
     def set_value(self, param, antenna, value):
+        ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
         try:
-            ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
             return self._param_handlers[param]('set', ibob, ibob_input, value)
         except KeyError:
             return BasicTCPServer.set_value(self, param, antenna, value)
@@ -390,6 +402,18 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         """ inst.set_gains(ant_val=[1,1.0,2,1.0,3,1.0,...]) -> values=[0,1,2,...]
         Set the pre-sum gains. """
         return self.set_values('gains', args, type='f')
+
+    @info
+    def get_thresholds(self, args):
+        """ inst.get_thresholds(ant=[1,2,3,4,...]) -> values=[16, 16, 16,...]
+        Get the threshold values used by the 2-bit quantizers. """
+        return self.get_values('thresholds', args, type='B')
+
+    @info
+    def set_thresholds(self, args):
+        """ inst.set_thresholds(ant_val=[1,16,2,16,3,16,...]) -> values=[0,1,2,...]
+        Set the 2-bit quantization thresholds. """
+        return self.set_values('thresholds', args, type='B')
 
     @info
     def noise_mode(self, args):
@@ -461,6 +485,14 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
     @debug
     def set_gains(self, gains_dict):
         return self._set_values(37, gains_dict, 'f', FLOAT_SIZE)
+
+    @debug
+    def get_thresholds(self, *antennas):
+        return self._get_values(38, 'B', BYTE_SIZE, *antennas)
+
+    @debug
+    def set_thresholds(self, thresh_dict):
+        return self._set_values(39, thresh_dict, 'B', BYTE_SIZE)
 
     @debug
     def noise_mode(self, mode=True):
