@@ -227,8 +227,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     def _sync_1pps(self):
         queues = {}
         for name, ibob in self._ibobs.iteritems():
-            queues[name] = ibob.tinysh('arm1pps')
-        for name, queue in queues.iteritems():
+            queues[ibob] = ibob.tinysh('arm1pps')
+        for ibob, queue in queues.iteritems():
             last_line = queue.get().splitlines()[-2]
             # should check if they were actually sync'ed
             # here instead of just logging about it
