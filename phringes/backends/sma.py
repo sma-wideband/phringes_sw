@@ -17,9 +17,10 @@ running on the DDS.
 
 import logging
 from math import pi
+from time import time, asctime, sleep
 from struct import Struct, pack, unpack
 from threading import Thread, RLock, Event
-from time import time, asctime, sleep
+from Queue import Queue
 
 from numpy import array as narray
 from numpy import loads
@@ -114,14 +115,33 @@ class BEE2CorrelatorClient(BasicUDPClient):
         BasicUDPClient.__init__(self, host, port)
         self._header_struct = BEE2CorrelationProvider._header_struct
         self._header_size = BEE2CorrelationProvider._header_size
+        self.host, self.port = host, port
+        self._stopevent = Event()
         self.size = size
 
     @debug
     def get_correlation(self):
         pkt = self._request('', 0) # blocks until packet is received
-        corr_time, refant, other, current, total = self._header_struct.unpack(pkt[:self._header_size])
-        return corr_time, refant, other, current, total, loads(pkt[self._header_size:])
+        corr_time, left, right, current, total = self._header_struct.unpack(pkt[:self._header_size])
+        return corr_time, left, right, current, total, loads(pkt[self._header_size:])
 
+    @debug
+    def _receive_loop(self, queue):
+        while not self._stopevent.isSet():
+            queue.put(self.get_correlation())
+
+    @debug
+    def start(self):
+        queue = Queue()
+        self._receive_thread = Thread(target=self._receive_loop, args=[queue,])
+        self._receive_thread.start()
+        return queue
+
+    @debug
+    def stop(self):
+        self._stopevent.set()
+        self._receive_thread.join()
+        
 
 class SubmillimeterArrayTCPServer(BasicTCPServer):
 
