@@ -238,8 +238,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     def _sync_sowf(self):
         queues = {}
         for name, ibob in self._ipas.iteritems():
-            queues[name] = ibob.tinysh('armsowf')
-        for name, queue in queues.iteritems():
+            queues[ibob] = ibob.tinysh('armsowf')
+        for ibob, queue in queues.iteritems():
             last_line = queue.get().splitlines()[-2]
             # should check if they were actually sync'ed
             # here instead of just logging about it
