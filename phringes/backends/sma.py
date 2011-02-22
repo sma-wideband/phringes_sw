@@ -525,7 +525,7 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         return unpack('!16I', resp)
 
     @debug
-    def set_dbe_gains(self, *changains):
+    def set_dbe_gains(self, changains):
         if len(changains) != 16:
             raise Exception, "please specify gains for all 16 channels!"
         cmd = pack('!B16I', 65, *changains)
