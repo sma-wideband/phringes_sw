@@ -202,7 +202,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   36: self.get_gains,
                                   37: self.set_gains,
                                   38: self.get_thresholds,
-                                  39: self.set_thresholds})
+                                  39: self.set_thresholds,
+                                  64: self.get_dbe_gains,
+                                  65: self.set_dbe_gains,})
         self.setup()
         #self.sync_all()
         self.start_checks_loop(30.0)
@@ -404,6 +406,26 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         return self.set_values('gains', args, type='f')
 
     @info
+    def get_dbe_gains(self, args):
+        """ inst.get_dbe_gains(ant=[0,1,2,3,4,...,15]) -> values=[1.0, 1.0, 1.0,...]
+        Get the DBE channelizer gains. """
+        gainctrl0 = self._dbe.bramdump('pol0/gainctrl0', 8)
+        gainctrl1 = self._dbe.bramdump('pol0/gainctrl1', 8)
+        changains = [None] * 16
+        changains[::2] = gainctrl0
+        changains[1::2] = gainctrl1
+        return pack('!B16I', 0, *changains)
+
+    @info
+    def set_dbe_gains(self, args):
+        """ inst.set_dbe_gains(ant_val=[0,1.0,1,1.0,2,1.0,...]) -> values=[0,1,2,...]
+        Set the DBE channelizer gains. """
+        changains = unpack('!16I', args)
+        for chan, gain in enumerate(changains):
+            self._dbe.bramwrite('pol0/gainctrl%d' %(chan%2), gain, int(chan/2.))
+        return self.get_dbe_gains('')
+
+    @info
     def get_thresholds(self, args):
         """ inst.get_thresholds(ant=[1,2,3,4,...]) -> values=[16, 16, 16,...]
         Get the threshold values used by the 2-bit quantizers. """
@@ -493,6 +515,25 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
     @debug
     def set_thresholds(self, thresh_dict):
         return self._set_values(39, thresh_dict, 'B', BYTE_SIZE)
+
+    @debug
+    def get_dbe_gains(self):
+        cmd = BYTE.pack(64)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.warning("error getting DBE channel gains!")
+        return unpack('!16I', resp)
+
+    @debug
+    def set_dbe_gains(self, *changains):
+        if len(changains) != 16:
+            raise Exception, "please specify gains for all 16 channels!"
+        cmd = pack('!B16I', 65, *changains)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.warning("error setting DBE channel gains!")
+        return unpack('!16I', resp)
+        
 
     @debug
     def noise_mode(self, mode=True):
