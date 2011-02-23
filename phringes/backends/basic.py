@@ -613,6 +613,7 @@ class BasicNetworkClient:
         logger_name = "%s(%s:%r)" %(self.__class__.__name__, host, port)
         self.logger = logging.getLogger(logger_name)
         self.address = (host, port)
+        self.ack_trans = '', ''
         self.timeout = timeout
 
     @debug
@@ -659,8 +660,10 @@ class BasicNetworkClient:
         match the socket will timeout.
         
         """
+        end_request = self.ack_trans[0]
+        end_response = self.ack_trans[1]
         try:
-            self._sock_send(data)
+            self._sock_send(data+end_request)
         except SocketError:
             self.logger.error("socket has been closed!")
             raise SocketError, "socket has been closed!"           
@@ -672,8 +675,8 @@ class BasicNetworkClient:
                     raise NullPacketError, "socket sending Null strings!"
                 buf += data
                 self.logger.debug("buffer: %r" % buf)
-                if len(data) < MAX_REQUEST_SIZE:
-                    return buf
+                if len(data) < MAX_REQUEST_SIZE and data.endswith(end_response):
+                    return buf[:-len(end_response)]
             except SocketTimeout:
                 self.logger.warning("socket timed out on recv!")
                 raise NotRespondingError, "socket not responding!"
@@ -704,7 +707,7 @@ class BasicInterfaceClient(BasicNetworkClient):
         
     def _sock_send(self, data):
         return self.sock.sendall(data)
-        
+    
     def _request(self, cmd, size=None):
         buf = ""
         self._open_socket()

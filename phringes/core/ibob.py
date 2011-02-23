@@ -24,6 +24,10 @@ class IBOBClient(BasicTCPClient):
     """ Interface to a single iBOB running lwIP
     """
 
+    def __init__(self, host, port, timeout=3):
+        BasicTCPClient.__init__(self, host, port, timeout=timeout)
+        self.ack_trans = '\x06\n', '\rno match: \x06\n\r'
+
     @debug
     def regread(self, device_name):
         retparser = lambda buf: int(buf.split()[-1].lstrip('0') or '0')
