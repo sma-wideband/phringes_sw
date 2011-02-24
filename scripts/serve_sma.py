@@ -6,6 +6,7 @@ A TCP server for the PHRINGES phased-array system
 
 
 import logging
+import logging.config
 from optparse import OptionParser
 
 from phringes.backends.sma import (
@@ -23,6 +24,10 @@ parser.add_option("-v", "--debug", action="store_true",
 parser.add_option("-l", "--logfile", action="store",
                   dest="logfile", default=None,
                   help="if present, write more detailed log to FILE",
+                  metavar="FILE")
+parser.add_option("--log-config", action="store",
+                  dest="logconfig", default=None,
+                  help="if present, parse FILE for logging config",
                   metavar="FILE")
 parser.add_option("-a", "--host", action="store",
                   dest="host", default="0.0.0.0",
@@ -45,6 +50,8 @@ parser.add_option("--block", action="store",
 (options, args) = parser.parse_args()
 
 
+formatter = logging.Formatter('%(name)-32s: %(asctime)s : %(levelname)-8s %(message)s')
+
 if not options.verbose:
     LEVEL = logging.ERROR
 elif options.debug:
@@ -53,14 +60,15 @@ else:
     LEVEL = logging.INFO
 console = logging.StreamHandler()
 console.setLevel(LEVEL)
-formatter = logging.Formatter('%(name)-32s: %(asctime)s : %(levelname)-8s %(message)s')
 console.setFormatter(formatter)
 
 logger = logging.getLogger('')
 logger.setLevel(LEVEL)
 logger.addHandler(console)
 
-if options.logfile:
+if options.logconfig:
+    logging.config.fileConfig(options.logconfig)
+elif options.logfile:
     logfile = logging.FileHandler(options.logfile)
     logfile.setLevel(logging.DEBUG)
     logfile.setFormatter(formatter)
