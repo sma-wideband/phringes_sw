@@ -15,6 +15,7 @@ running on the DDS.
 """
 
 
+import re
 import logging
 from math import pi
 from time import time, asctime, sleep
@@ -489,10 +490,17 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         responses from the server's underlying iBOBs. Note: this
         should be used cautiously, if you find yourself using this often
         you should just write a server command."""
+        queues = {}
         argsplit = args.split(' ')
-        ibob, cmd = argsplit[0], ' '.join(argsplit[1:])
-        queue = self._ibobs[ibob].tinysh(cmd)
-        return SBYTE.pack(0) + queue.get(10)
+        ibob_re, cmd = argsplit[0], ' '.join(argsplit[1:])
+        for name, ibob in self._ibobs.iteritems():
+            if re.match(ibob_re, name):
+                queues[name] = ibob.tinysh(cmd)
+        response = ''
+        for name, queue in queues.iteritems():
+            response += queue.get(20)
+            response += "\r### {0} {1}\n\r".format(name, cmd) 
+        return SBYTE.pack(0) + response
 
     def get_integration_time(self, args):
         """ inst.get_integration_time() -> err_code
