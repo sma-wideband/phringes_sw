@@ -255,7 +255,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                  bee2_host='b02.ata.pvt', bee2_port=7147,
                  correlator_bitstream='bee2_calib_corr.bof',
                  ipa_hosts=('169.254.128.3', '169.254.128.2'),
-                 dbe_host='169.254.128.0'):
+                 dbe_host='169.254.128.0', dds_host='128.171.116.182'):
         """ SubmillimeterArrayTCPServer(address, handler, correlator, lags, baselines)
         This subclasses the BasicTCPServer and adds some methods needed for
         controlling and reading data from the BEE2CorrelationProvider. Please see 
@@ -270,6 +270,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self.bee2_host, self.bee2_port, self.bee2_bitstream = bee2_host, bee2_port, correlator_bitstream
         self._bee2 = BEE2Client(bee2_host, port=bee2_port)
         self._bee2._connected.wait()
+        self._dds = DDSClient(dds_host)
         self._ipa0 = IBOBClient(ipa_hosts[0], port=23)
         self._ipa1 = IBOBClient(ipa_hosts[1], port=23)
         self._dbe = IBOBClient(dbe_host, port=23)
@@ -281,9 +282,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 2: [self._ipa0, 2], 3: [self._ipa0, 3],
                                 4: [self._ipa1, 0], 5: [self._ipa1, 1],
                                 6: [self._ipa1, 2], 7: [self._ipa1, 3]}
-        self._param_handlers = {'_delay_offsets': self._delay_handler,
-                                '_phase_offsets': self._phase_handler,
+        self._param_handlers = {'_phase_offsets': self._phase_handler,
                                 '_thresholds' : self._thresh_handler,
+                                '_delays': self._delay_handler,
                                 '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
                                   3 : self.set_mapping,
@@ -291,18 +292,22 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   13: self.arm_sync,
                                   14: self.noise_mode,
                                   15: self._board,
-                                  36: self.get_gains,
-                                  37: self.set_gains,
-                                  38: self.get_thresholds,
-                                  39: self.set_thresholds,
+                                  36: self.get_delays,
+                                  37: self.set_delays,
+                                  38: self.get_gains,
+                                  39: self.set_gains,
+                                  40: self.get_thresholds,
+                                  41: self.set_thresholds,
                                   64: self.get_dbe_gains,
                                   65: self.set_dbe_gains,})
         self.setup()
         #self.sync_all()
         self.start_checks_loop(30.0)
+        self.start_delay_tracker(4.0)
 
     def shutdown(self, args):
         self.stop_checks_loop()
+        self.stop_delay_tracker()
         return BasicTCPServer.shutdown(self, args)
 
     @info
@@ -339,25 +344,27 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def _sync_1pps(self):
-        queues = {}
-        for name, ibob in self._ibobs.iteritems():
-            queues[ibob] = ibob.tinysh('arm1pps')
-        for ibob, queue in queues.iteritems():
-            last_line = queue.get().splitlines()[-2]
-            # should check if they were actually sync'ed
-            # here instead of just logging about it
-            ibob.logger.info(last_line)
+        with RLock():
+            queues = {}
+            for name, ibob in self._ibobs.iteritems():
+                queues[ibob] = ibob.tinysh('arm1pps')
+            for ibob, queue in queues.iteritems():
+                last_line = queue.get().splitlines()[-2]
+                # should check if they were actually sync'ed
+                # here instead of just logging about it
+                ibob.logger.info(last_line)
 
     @debug
     def _sync_sowf(self):
-        queues = {}
-        for name, ibob in self._ipas.iteritems():
-            queues[ibob] = ibob.tinysh('armsowf')
-        for ibob, queue in queues.iteritems():
-            last_line = queue.get().splitlines()[-2]
-            # should check if they were actually sync'ed
-            # here instead of just logging about it
-            ibob.logger.info(last_line)
+        with RLock():
+            queues = {}
+            for name, ibob in self._ipas.iteritems():
+                queues[ibob] = ibob.tinysh('armsowf')
+            for ibob, queue in queues.iteritems():
+                last_line = queue.get().splitlines()[-2]
+                # should check if they were actually sync'ed
+                # here instead of just logging about it
+                ibob.logger.info(last_line)
 
     @debug
     def _check_XAUI(self):
@@ -394,12 +401,36 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._check_XAUI()
 
     @debug
+    def run_delay_tracker(self, delays):
+        for a in self._antennas:
+            self.set_value('_delays', a, delays[a])
+
+    @debug
     def _checks_loop(self):
         while not self._checks_stopevent.isSet():
             with RLock():
                 checks_period = self._checks_period
                 self.run_checks()
             self._checks_stopevent.wait(checks_period)
+
+    @debug
+    def _delay_tracker(self):
+        logger = logging.getLogger("DelayTracker")
+        while not self._delay_tracker_stopevent.isSet():
+            start = time()
+            try:
+                with RLock():
+                    period = self._delay_tracker_period
+                    delays = self._dds.get_delays(start+period)
+            except:
+                logger.error("Problem communicating with the DDS!")
+                self._delay_tracker_stopevent.wait(period)
+                continue
+            while time() < start+period:
+                self._delay_tracker_stopevent.wait(period/10.)
+            with RLock():
+                self.run_delay_tracker(delays)
+            logger.info('|'.join('%d:%.2f'%(a, d) for a, d in delays.iteritems() if a in self._antennas))
 
     @debug
     def start_checks_loop(self, period):
@@ -410,12 +441,25 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._checks_thread.start()
 
     @debug
+    def start_delay_tracker(self, period):
+        self.logger.info('starting delay tracker at %s (period %.2f)' % (asctime(), period))
+        self._delay_tracker_period = period
+        self._delay_tracker_stopevent = Event()
+        self._delay_tracker_thread = Thread(target=self._delay_tracker)
+        self._delay_tracker_thread.start()
+
+    @debug
     def stop_checks_loop(self):
         self._checks_stopevent.set()
         self._checks_thread.join()
 
     @debug
-    def _delay_handler(self, mode, ibob, ibob_input, value=None):
+    def stop_delay_tracker(self):
+        self._delay_tracker_stopevent.set()
+        self._delay_tracker_thread.join()
+
+    @debug
+    def _delay_handler(self, mode, antenna, ibob, ibob_input, value=None):
         adc_per_ns = 1.024
         regname = 'delay%d' % ibob_input
         if mode=='get':
@@ -424,12 +468,13 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                 regvalue += 2**17
             return ((regvalue-64)/(16*adc_per_ns)) % (2**17)
         elif mode=='set':
+            total = value + self._delay_offsets[antenna]
             regvalue = (round(16*adc_per_ns*value)+64) % (2**17)
             ibob.regwrite(regname, int(regvalue))
-            return self._delay_handler('get', ibob, ibob_input)
+            return self._delay_handler('get', antenna, ibob, ibob_input)
 
     @debug
-    def _phase_handler(self, mode, ibob, ibob_input, value=None):
+    def _phase_handler(self, mode, antenna, ibob, ibob_input, value=None):
         deg_per_step = 360./2**12
         regname = 'phase%d' % ibob_input
         if mode=='get':
@@ -438,10 +483,10 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         elif mode=='set':
             regvalue = round(value/deg_per_step)
             ibob.regwrite(regname, int(regvalue))
-            return self._phase_handler('get', ibob, ibob_input)
+            return self._phase_handler('get', antenna, ibob, ibob_input)
 
     @debug
-    def _gain_handler(self, mode, ibob, ibob_input, value=None):
+    def _gain_handler(self, mode, antenna, ibob, ibob_input, value=None):
         regname = 'gain%d' % ibob_input
         if mode=='get':
             regvalue = ibob.regread(regname)
@@ -449,31 +494,44 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         elif mode=='set':
             regvalue = round(value * 2**7) % 256
             ibob.regwrite(regname, int(regvalue))
-            return self._gain_handler('get', ibob, ibob_input)
+            return self._gain_handler('get', antenna, ibob, ibob_input)
 
     @debug
-    def _thresh_handler(self, mode, ibob, ibob_input, value=None):
+    def _thresh_handler(self, antenna, mode, ibob, ibob_input, value=None):
         regname = 'quant/thresh%d' % ibob_input
         if mode=='get':
             return ibob.regread(regname)
         elif mode=='set':
             ibob.regwrite(regname, value)
-            return self._thresh_handler('get', ibob, ibob_input)
+            return self._thresh_handler('get', antenna, ibob, ibob_input)
 
     def get_value(self, param, antenna):
         try:
             ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
-            return self._param_handlers[param]('get', ibob, ibob_input)
+            return self._param_handlers[param]('get', antenna, ibob, ibob_input)
         except KeyError:
-            self.logger.warning('Parameter handler not found! Defaulting...')
             return BasicTCPServer.get_value(self, param, antenna)
 
     def set_value(self, param, antenna, value):
         ibob, ibob_input = self._input_ibob_map[self._mapping[antenna]]
         try:
-            return self._param_handlers[param]('set', ibob, ibob_input, value)
+            return self._param_handlers[param]('set', antenna, ibob, ibob_input, value)
         except KeyError:
             return BasicTCPServer.set_value(self, param, antenna, value)
+
+    @info
+    def get_delays(self, args):
+        """ inst.get_delays(ant=[1,2,3,4,...]) -> values=[100.0, 100.0, 100.0,...]
+        Get the current delays (with delay offsets included). """
+        return self.get_values('delays', args, type='f')
+
+    @info
+    def set_delays(self, args):
+        """ inst.set_delays(ant_val=[1,1.0,2,1.0,3,1.0,...]) -> values=[0,1,2,...]
+        Set the delays, this may be overriden by the delay tracking loop.
+        If you're looking to just add a delay offset use set_delay_offsets instead
+        and wait for the delay loop to iterate."""
+        return self.set_values('delays', args, type='f')
 
     @info
     def get_mapping(self, args):
@@ -616,20 +674,28 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         return self._set_values(3, mapping_dict, 'B', BYTE_SIZE)
 
     @debug
-    def get_gains(self, *antennas):
+    def get_delays(self, *antennas):
         return self._get_values(36, 'f', FLOAT_SIZE, *antennas)
 
     @debug
+    def set_delays(self, delays_dict):
+        return self._set_values(37, delays_dict, 'f', FLOAT_SIZE)
+
+    @debug
+    def get_gains(self, *antennas):
+        return self._get_values(38, 'f', FLOAT_SIZE, *antennas)
+
+    @debug
     def set_gains(self, gains_dict):
-        return self._set_values(37, gains_dict, 'f', FLOAT_SIZE)
+        return self._set_values(39, gains_dict, 'f', FLOAT_SIZE)
 
     @debug
     def get_thresholds(self, *antennas):
-        return self._get_values(38, 'B', BYTE_SIZE, *antennas)
+        return self._get_values(40, 'B', BYTE_SIZE, *antennas)
 
     @debug
     def set_thresholds(self, thresh_dict):
-        return self._set_values(39, thresh_dict, 'B', BYTE_SIZE)
+        return self._set_values(41, thresh_dict, 'B', BYTE_SIZE)
 
     @debug
     def get_dbe_gains(self):

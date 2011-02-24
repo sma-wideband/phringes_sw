@@ -868,7 +868,7 @@ class BasicTCPClient(BasicNetworkClient):
         args = argfmt.format(*args, **argsdict)
         try:
             return retparser(self._request(self.cmdfmt.format(cmd=cmd, args=args), retsize))
-        except BasicNetworkError:
+        except (BasicNetworkError, SocketError):
             self.logger.error("errors occured, reconnecting...")
             if tries < self.retries:
                 try:
