@@ -288,6 +288,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
                                   3 : self.set_mapping,
+                                  7 : self.delay_tracker,
                                   12: self.reset_xaui,
                                   13: self.arm_sync,
                                   14: self.noise_mode,
@@ -457,6 +458,28 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     def stop_delay_tracker(self):
         self._delay_tracker_stopevent.set()
         self._delay_tracker_thread.join()
+
+    @info
+    def delay_tracker(self, args):
+        """ inst.noise_mode(bool)
+        If bool=True, selects internally generated noise.
+        If bool=False, selects external ADC data (normal)."""
+        on = unpack('!B', args[0])[0]
+        if self._delay_tracker_thread.isAlive():
+            if on:
+                self.logger.warning("delay tracker already started!")
+                return SBYTE.pack(-1)
+            else:
+                self.logger.info("delay tracker started")
+                self.start_delay_tracker()
+        else:
+            if not on:
+                self.logger.warning("delay tracker has not been started!")
+                return SBYTE.pack(-2)
+            else:
+                self.logger.info("delay tracker stopped")
+                self.stop_delay_tracker()
+        return SBYTE.pack(0)
 
     @debug
     def _delay_handler(self, mode, antenna, ibob, ibob_input, value=None):
@@ -714,6 +737,15 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         if err:
             self.logger.warning("error setting DBE channel gains!")
         return unpack('!16I', resp)
+
+    @debug
+    def delay_tracker(self, on=True):
+        cmd = pack('!BB', 7, on)
+        size, err, resp = self._request(cmd)
+        if err == -1:
+            self.logger.warning("delay tracker is already on!")
+        elif err == -2:
+            self.logger.warning("delay tracker is alread off!")
 
     @debug
     def noise_mode(self, mode=True):
