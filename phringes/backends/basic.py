@@ -228,8 +228,8 @@ class BasicRequestHandler(BaseRequestHandler):
         else:
             return self._no_command(cmd)
         # finally if all went well send our response
-        sent = self.request.send(SHORT.pack(len(response)+2) + response)
-        self.logger.debug('sent %s bytes' % sent)
+        self.request.sendall(SHORT.pack(len(response)+2) + response)
+        #self.logger.debug('sent %s bytes' % sent)
 
 
 class BasicTCPServer(ThreadingTCPServer):
@@ -675,7 +675,7 @@ class BasicNetworkClient:
                     raise NullPacketError, "socket sending Null strings!"
                 buf += data
                 self.logger.debug("buffer: %r" % buf)
-                if len(data) < MAX_REQUEST_SIZE and data.endswith(end_response):
+                if buf.endswith(end_response):
                     return buf[:-len(end_response)]
             except SocketTimeout:
                 self.logger.warning("socket timed out on recv!")
@@ -712,7 +712,7 @@ class BasicInterfaceClient(BasicNetworkClient):
         buf = ""
         self._open_socket()
         self._sock_send(SHORT.pack(len(cmd)+2) + cmd)
-        while buf < size or size is None:
+        while len(buf) < size or size is None:
             request = self._sock_recv(MAX_REQUEST_SIZE)
             if not request:
                 raise NullPacketError
@@ -720,7 +720,9 @@ class BasicInterfaceClient(BasicNetworkClient):
                 size = SHORT.unpack(request[:2])[0]
             buf += request
         if len(buf) != size:
-            raise IncorrectSizeError, 'return packet is the wrong size!'            
+            self.logger.debug(buf)
+            self.logger.debug("response of size %d, should be %d" % (len(buf), size))
+            raise IncorrectSizeError, 'return packet is the wrong size!'
         self._close_socket()
         size, err = unpack('!Hb', buf[:3])
         return size, err, buf[3:]

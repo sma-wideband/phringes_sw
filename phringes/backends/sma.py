@@ -239,12 +239,12 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @info
     def reset_xaui(self, args):
-        lev = BYTE.unpack(args[0])
+        lev = BYTE.unpack(args[0])[0]
         for board in [self._dbe, self._bee2]:
             board.regwrite('xaui_rst', lev)
-            self.logger.info('xaui_rst=%d' % board.regread('xaui_rst'))
+            board.logger.info('xaui_rst=%d' % board.regread('xaui_rst'))
             board.regwrite('xaui_rst', 0)
-            self.logger.info('xaui_rst=%d' % board.regread('xaui_rst'))
+            board.logger.info('xaui_rst=%d' % board.regread('xaui_rst'))
         return BYTE.pack(0)
 
     @info
@@ -482,7 +482,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             ibob.regwrite('insel', insel*0x55555555)
         return SBYTE.pack(0)
 
-    @warning
+    @debug
     def _ibob_tinysh(self, args):
         """ inst._ibob_tinysh(cmd)
         This allows the client to send commands and receive
@@ -492,7 +492,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         argsplit = args.split(' ')
         ibob, cmd = argsplit[0], ' '.join(argsplit[1:])
         queue = self._ibobs[ibob].tinysh(cmd)
-        return queue.get(10)
+        return SBYTE.pack(0) + queue.get(10)
 
     def get_integration_time(self, args):
         """ inst.get_integration_time() -> err_code
@@ -585,4 +585,4 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         size, err, resp = self._request(BYTE.pack(15) + cmdstr)
         if err:
             self.logger.warning("error using _ibob_tinysh!")
-        return resp
+        print resp
