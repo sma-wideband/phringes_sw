@@ -17,8 +17,8 @@ running on the DDS.
 
 import re
 import logging
-from math import pi
-from time import time, asctime, sleep
+from math import pi, cos, sin
+from time import time, asctime, gmtime, sleep
 from struct import Struct, pack, unpack
 from threading import Thread, RLock, Event
 from Queue import Queue
@@ -65,15 +65,81 @@ class DDSClient:
         return _dds.getwalshpattern(self.host)
 
     @debug
-    def pap_to_dds(self, phases):
+    def query_dds(self, phases):
+        if phases == None:
+            phases = [0.]*11
         return _dds.sendphases(self.host, phases)
 
     @debug
-    def get_delay_precursors(self):
-        dds_to_pap = self.pap_to_dds([0.]*11)
-        return {'a': dds_to_pap['a'],
-                'b': dds_to_pap['a'],
-                'c': dds_to_pap['c']}
+    def get_local_sidereal_time(self, at_time, longitude):
+        """
+        Follows the procedure outlined in
+            Practical Astronomy with your Calculator
+            by Peter Duffet-Smith
+         to find the (L)ocal (S)idereal (T)time
+        """
+        #
+        # First, find the Julian date (page 7)
+        #
+        (y, m, d, hours, mins, sec, week, jd, dst) = gmtime(at_time)
+        ut_hours = hours + (mins + sec/60.)/60.
+        d = d + ut_hours/24.
+        if m==1 or m==2:
+            y -= 1
+            m += 12
+        A = int(y/100.)
+        B = 2. - A + int(A/4.)
+        C = int(365.25*y)
+        D = int(30.600100*(m+1))
+        jd = B + C + D + int(d) + 1720994.500
+        #
+        # Next find Greenwich mean sidereal time
+        # using procedure on page 17
+        #
+        s = jd - 2451545.0
+        t = s/36525.0
+        t0 = 6.697374558 + 2400.051336*t + 0.000025862*t**2
+        t0 = (t0 - int(t0/24.)*24)
+        if t0<0.0:
+            t0 += 24.
+        ut = 1.002737909*ut_hours
+        tmp = int((ut+t0)/24.)
+        gmst = ut + t0 - tmp*24.
+        # 
+        # Finally, find the LST using page 20
+        #
+        long_tdiff = (longitude*(180/pi))/15.
+        lst = gmst + long_tdiff
+        if lst>24:
+            lst = lst-24
+        if lst<0:
+            lst = lst+24
+        return lst
+
+    @debug
+    def get_hour_angle(self, source_rA, longitude, at_time):
+        return self.get_local_sidereal_time(at_time, longitude)*(pi/12) - source_rA
+
+    @debug
+    def get_delay(self, H, a, b, c):
+        return (10.0**9) * (a + b*cos(H) + c*sin(H))
+
+    @debug
+    def get_delays(self, at_time, offset=4000., given_phases=None):
+        delays = {}
+        query = self.query_dds(given_phases)
+        H = self.get_hour_angle(query['rA'], query['refLong'], at_time)
+        for ant in range(len(query['antennaExists'])):
+            partial = self.get_delay(H, query['a'][ant], query['b'][ant], query['c'][ant])
+            delays[ant] = offset - partial
+        return delays
+
+    @debug
+    def formatTime(self, dec_time):
+        hours = int(dec_time)
+        mins = int((dec_time - hours)*60.)
+        sec = (dec_time - hours - mins/60.)*3600.
+        return '%i:%02i:%2.2f' % (hours,abs(mins),abs(sec))
 
 
 class BEE2BorphError(Exception):
@@ -264,6 +330,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def _setup_DBE(self):
+        self._bee2.progdev('bee2_complex_corr.bof')
         self._dbe.regwrite('insel', 0)
 
     @debug
