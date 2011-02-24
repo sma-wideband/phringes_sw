@@ -238,9 +238,12 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @info
     def reset_xaui(self, args):
+        lev = BYTE.unpack(args[0])
         for board in [self._dbe, self._bee2]:
-            board.regwrite('xaui_rst', 2)
+            board.regwrite('xaui_rst', lev)
+            self.logger.info('xaui_rst=%d' % board.regread('xaui_rst'))
             board.regwrite('xaui_rst', 0)
+            self.logger.info('xaui_rst=%d' % board.regread('xaui_rst'))
         return BYTE.pack(0)
 
     @info
@@ -502,8 +505,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 class SubmillimeterArrayClient(BasicInterfaceClient):
 
     @debug
-    def reset_xaui(self):
-        cmd = BYTE.pack(12)
+    def reset_xaui(self, lev=6):
+        cmd = pack('!BB', 12, lev)
         size, err, resp = self._request(cmd)
         if err:
             self.logger.warning("error resetting XAUIs!")
