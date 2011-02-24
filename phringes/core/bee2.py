@@ -5,8 +5,10 @@ Note: BEE2Client was inspired by the 'corr' package's FpgaClient
 """
 
 
+import sys
 import logging
 import struct
+from Queue import Queue
 
 from katcp import BlockingClient, Message
 
@@ -106,3 +108,24 @@ class BEE2Client(BlockingClient):
             fmt = ">%dI" % len(integers)
         data = struct.pack(fmt, *integers)
         self._write(device_name, data, offset=offset)
+
+    @debug
+    def tinysh(self, command):
+        """ Emulate IBOBClient.tinysh """
+        args = []
+        queue = Queue()
+        cmd, sep, argstr = command.partition(' ')
+        # we assume here the first argument is a string
+        # and the rest are integers; and if an error occurs
+        # simple GTFO
+        try:
+            for i, a in enumerate(argstr.split(' ')):
+                if i == 0:
+                    args.append(a)
+                else:
+                    args.append(int(a))
+            response = repr(getattr(self, cmd)(*args))
+        except:
+            response = repr(sys.exc_info()[1])
+        queue.put('\r'+response+'\n\r')
+        return queue

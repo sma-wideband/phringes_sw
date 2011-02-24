@@ -209,6 +209,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._dbe = IBOBClient(dbe_host, port=23)
         self._ipas = {'ipa0': self._ipa0, 'ipa1': self._ipa1}
         self._ibobs = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe}
+        self._boards = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe, 'bee2': self._bee2}
         self._mapping = {6:0, 1:1, 2:2, 3:3, 4:4, 5:5, 7:6, 8:7}
         self._input_ibob_map = {0: [self._ipa0, 0], 1: [self._ipa0, 1],
                                 2: [self._ipa0, 2], 3: [self._ipa0, 3],
@@ -223,7 +224,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   12: self.reset_xaui,
                                   13: self.arm_sync,
                                   14: self.noise_mode,
-                                  15: self._ibob_tinysh,
+                                  15: self._board,
                                   36: self.get_gains,
                                   37: self.set_gains,
                                   38: self.get_thresholds,
@@ -484,22 +485,21 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         return SBYTE.pack(0)
 
     @debug
-    def _ibob_tinysh(self, args):
-        """ inst._ibob_tinysh(cmd)
+    def _board(self, args):
+        """ inst._board(board, cmd)
         This allows the client to send commands and receive
         responses from the server's underlying iBOBs. Note: this
         should be used cautiously, if you find yourself using this often
         you should just write a server command."""
         queues = {}
-        argsplit = args.split(' ')
-        ibob_re, cmd = argsplit[0], ' '.join(argsplit[1:])
-        for name, ibob in self._ibobs.iteritems():
-            if re.match(ibob_re, name):
-                queues[name] = ibob.tinysh(cmd)
+        board_re, sep, cmd = args.partition(' ')
+        for name, board in self._boards.iteritems():
+            if re.match(board_re, name):
+                queues[name] = board.tinysh(cmd)
         response = ''
         for name, queue in queues.iteritems():
             response += queue.get(20)
-            response += "\r### {0} {1}\n\r".format(name, cmd) 
+            response += "\r### {0} {1} @({2})\n\r".format(name, cmd, asctime()) 
         return SBYTE.pack(0) + response
 
     def get_integration_time(self, args):
@@ -590,7 +590,7 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
             self.logger.warning("error setting noise mode!")
 
     @debug
-    def _ibob_tinysh(self, ibob, command, *args):
+    def _board(self, ibob, command, *args):
         argstr = ' '.join(str(a) for a in args)
         cmdstr = "%s %s %s" %(ibob, command, argstr)
         size, err, resp = self._request(BYTE.pack(15) + cmdstr)
