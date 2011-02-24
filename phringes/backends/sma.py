@@ -515,6 +515,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
 class SubmillimeterArrayClient(BasicInterfaceClient):
 
+    def __init__(self, host, port, timeout=10):
+        BasicInterfaceClient.__init__(self, host, port, timeout=timeout)
+
     @debug
     def reset_xaui(self, lev=6):
         cmd = pack('!BB', 12, lev)
