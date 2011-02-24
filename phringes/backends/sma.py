@@ -222,6 +222,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   12: self.reset_xaui,
                                   13: self.arm_sync,
                                   14: self.noise_mode,
+                                  15: self._ibob_tinysh,
                                   36: self.get_gains,
                                   37: self.set_gains,
                                   38: self.get_thresholds,
@@ -295,18 +296,16 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                   'BEE': (self._bee2, '_')}
         for board_name, info in boards.iteritems():
             board, regsep = info
-            msg = "{board}/{0}: last sync lasted {1} (period errors: {2})(linkdowns: {3})"
+            msg = "{board}/{0}: (period {1})(syncs {2})(errors: {3})(linkdowns: {4})"
             for xaui in ['xaui0', 'xaui1']:
                 prefix = xaui+regsep
                 if board.regread(prefix+'rx_linkdown'):
-                    self.logger.error(
-                        '{board} {0} link is down!'.format(xaui, board=board_name)
-                        )
+                    self.logger.error('{board} {0} link is down!'.format(xaui, board=board_name))
                 period = board.regread(prefix+'period')
-                period_err = board.regread(prefix+'period_err')
+                sync_cnt = board.regread(prefix+'sync_cnt')
                 period_err_cnt = board.regread(prefix+'period_err_cnt')
                 linkdown_cnt = board.regread(prefix+'linkdown_cnt')
-                board.logger.info(msg.format(xaui, period, period_err_cnt,
+                board.logger.info(msg.format(xaui, period, sync_cnt, period_err_cnt,
                                             linkdown_cnt, board=board_name))
 
     @info
@@ -483,6 +482,18 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             ibob.regwrite('insel', insel*0x55555555)
         return SBYTE.pack(0)
 
+    @warning
+    def _ibob_tinysh(self, args):
+        """ inst._ibob_tinysh(cmd)
+        This allows the client to send commands and receive
+        responses from the server's underlying iBOBs. Note: this
+        should be used cautiously, if you find yourself using this often
+        you should just write a server command."""
+        argsplit = args.split(' ')
+        ibob, cmd = argsplit[0], ' '.join(argsplit[1:])
+        queue = self._ibobs[ibob].tinysh(cmd)
+        return queue.get(10)
+
     def get_integration_time(self, args):
         """ inst.get_integration_time() -> err_code
         Overloaded method to get integration time on the BEE2."""
@@ -559,7 +570,6 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         if err:
             self.logger.warning("error setting DBE channel gains!")
         return unpack('!16I', resp)
-        
 
     @debug
     def noise_mode(self, mode=True):
@@ -567,3 +577,12 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         size, err, resp = self._request(cmd)
         if err:
             self.logger.warning("error setting noise mode!")
+
+    @debug
+    def _ibob_tinysh(self, ibob, command, *args):
+        argstr = ' '.join(str(a) for a in args)
+        cmdstr = "%s %s %s" %(ibob, command, argstr)
+        size, err, resp = self._request(BYTE.pack(15) + cmdstr)
+        if err:
+            self.logger.warning("error using _ibob_tinysh!")
+        return resp
