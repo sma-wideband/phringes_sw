@@ -29,6 +29,7 @@ from numpy import (
     angle, concatenate, loads
     )
 
+from phringes.backends import _dds
 from phringes.core.bee2 import BEE2Client
 from phringes.core.ibob import IBOBClient
 from phringes.core.loggers import (
@@ -50,6 +51,28 @@ PERIOD_SYNCSEL = {0: PERIOD_1024PPS,
                   1: PERIOD_HB,
                   2: PERIOD_SOWF,
                   3: PERIOD_1PPS}
+
+
+class DDSClient:
+
+    @debug
+    def __init__(self, dds_host):
+        self.host = dds_host
+
+    @debug
+    def get_walsh_pattern(self):
+        return _dds.getwalshpattern(self.host)
+
+    @debug
+    def pap_to_dds(self, phases):
+        return _dds.sendphases(self.host, phases)
+
+    @debug
+    def get_delay_precursors(self):
+        dds_to_pap = self.pap_to_dds([0.]*11)
+        return {'a': dds_to_pap['a'],
+                'b': dds_to_pap['a'],
+                'c': dds_to_pap['c']}
 
 
 class BEE2BorphError(Exception):

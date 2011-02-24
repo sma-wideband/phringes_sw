@@ -43,6 +43,7 @@ _dds_sendphases(PyObject *self, PyObject *args)
     // convert it to a C double
     phaseoffset = PyFloat_AsDouble(phase);
     if (phaseoffset < 0 && PyErr_Occurred()) {
+      PyErr_SetString(PyExc_Exception, "Phases must be a sequence of floats!");
       Py_DECREF(phase); // clean-up
       return NULL;
     }
