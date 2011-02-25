@@ -12,7 +12,7 @@ from Tkinter import Tk, StringVar, Frame,\
 from numpy.fft import fft
 from numpy.random import randint
 from numpy import (
-    array, arange, pi, sin, sqrt, abs, log10, concatenate,
+    array, angle, arange, pi, sin, sqrt, abs, log10, concatenate,
     )
 
 import phringes.backends.sma as sma
@@ -32,7 +32,7 @@ frame = Frame(root)
 frame.pack(fill=BOTH, expand=1)
 
 correlator = sma.BEE2CorrelatorClient(gethostbyname(gethostname()), 8332)
-server = sma.SubmillimeterArrayClient('128.171.116.126', 59999)
+server = sma.SubmillimeterArrayClient('128.171.116.126', 59998)
 try:
     server.subscribe(correlator.host, correlator.port)
 except:
@@ -53,7 +53,8 @@ quit.pack(side=BOTTOM)
 
 def update_plots(widget, baselines):
     try:
-        corr_time, left, right, current, total, phase = correlator.get_correlation()
+        corr_time, left, right, current, total, correlation = correlator.get_correlation()
+        lags, visibility = correlation
         baseline = left, right
         correlator.logger.info('received baseline %s' % repr(baseline))
     except NoCorrelations:
@@ -61,14 +62,14 @@ def update_plots(widget, baselines):
         return
     if baseline not in baselines.keys():
         corr.axes.grid()
-        corr.axes.set_xlabel('Lag', size='large')
-        corr.axes.set_ylabel('Correlation Function', size='large')
-        line = corr.plot(f, phase, '.', linewidth=1, label=repr(baseline))[0]
+        #corr.axes.set_xlabel('Lag', size='large')
+        #corr.axes.set_ylabel('Correlation Function', size='large')
+        line = corr.plot(f, angle(visibility), 'o-', linewidth=1, label=repr(baseline))[0]
         baselines[baseline] = line
     else:
         corr.axes.legend()
         line = baselines[baseline]
-        corr.update_line(line, f, phase)
+        corr.update_line(line, f, angle(visibility))
     widget.update()
     widget.after_idle(update_plots, widget, baselines)
 
