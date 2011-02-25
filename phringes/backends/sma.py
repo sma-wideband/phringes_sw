@@ -304,11 +304,11 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self.setup()
         #self.sync_all()
         self.start_checks_loop(30.0)
-        self.start_delay_tracker(4.0)
+        #self.start_delay_tracker(4.0)
 
     def shutdown(self, args):
         self.stop_checks_loop()
-        self.stop_delay_tracker()
+        #self.stop_delay_tracker()
         return BasicTCPServer.shutdown(self, args)
 
     @info
@@ -520,7 +520,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             return self._gain_handler('get', antenna, ibob, ibob_input)
 
     @debug
-    def _thresh_handler(self, antenna, mode, ibob, ibob_input, value=None):
+    def _thresh_handler(self, mode, antenna, ibob, ibob_input, value=None):
         regname = 'quant/thresh%d' % ibob_input
         if mode=='get':
             return ibob.regread(regname)
