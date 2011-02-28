@@ -27,10 +27,11 @@ from numpy.random import randint
 from numpy.fft import fft, fftshift
 from numpy import array as narray
 from numpy import (
-    angle, concatenate, loads
+    arange, angle, concatenate, loads
     )
 
 from phringes.backends import _dds
+from phringes.core.utils import get_phase_fit
 from phringes.core.bee2 import BEE2Client
 from phringes.core.ibob import IBOBClient
 from phringes.core.loggers import (
@@ -180,7 +181,7 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
     @debug
     def get_visibility(self, lags):
         shifted = concatenate((lags[8:], lags[1:8]))
-        return concatenate(([0], fftshift(fft(shifted))))
+        return fftshift(fft(shifted))
 
     @info
     def fringe(self):
@@ -208,7 +209,9 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
                 lags = self._read_lag(other, 'usb')
                 span = 100 * (abs(lags).max() - abs(lags).min()) / (2**31)
                 self.logger.info('baseline %s: span=%.4f%%' % (repr(baseline), span))
-                self._correlations[baseline] = narray([lags, self.get_visibility(lags)])
+                visibility = self.get_visibility(lags)
+                (phase, delay), phase_fit = get_phase_fit(arange(-7., 8.), angle(visibility))
+                self._correlations[baseline] = narray([lags[1:], visibility, phase_fit])
 
 
 class BEE2CorrelatorClient(BasicUDPClient):
@@ -336,11 +339,11 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def _setup_DBE(self):
-        self._bee2.progdev('bee2_complex_corr.bof')
         self._dbe.regwrite('insel', 0)
 
     @debug
     def _setup_BEE2(self):
+        self._bee2.progdev('bee2_complex_corr.bof')
         self._bee2.regwrite('syncsel', 2)
 
     @debug
