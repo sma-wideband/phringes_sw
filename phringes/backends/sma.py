@@ -42,6 +42,7 @@ from basic import (
     BasicCorrelationProvider, BasicRequestHandler,
     BasicTCPServer, BasicInterfaceClient, BasicUDPClient,
     BYTE, SBYTE, FLOAT, BYTE_SIZE, FLOAT_SIZE,
+    NoCorrelations,
 )
 
 
@@ -226,7 +227,7 @@ class BEE2CorrelatorClient(BasicUDPClient):
 
     @debug
     def get_correlation(self):
-        pkt = self._request('', 0) # blocks until packet is received
+        pkt = self._request('', 0) # raises NoCorrelation if none ready
         corr_time, left, right, current, total = self._header_struct.unpack(pkt[:self._header_size])
         return corr_time, left, right, current, total, loads(pkt[self._header_size:])
 
@@ -270,6 +271,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 include_baselines=include_baselines)
         self._correlator = correlator(self, self._include_baselines, bee2_host, bee2_port, 
                                       lags=correlator_lags, bof=correlator_bitstream)
+        self._correlator_client = BEE2CorrelatorClient('0.0.0.0', 8332) # user must add_subscriber
         self.bee2_host, self.bee2_port, self.bee2_bitstream = bee2_host, bee2_port, correlator_bitstream
         self._bee2 = BEE2Client(bee2_host, port=bee2_port)
         self._bee2._connected.wait()
@@ -292,18 +294,19 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._command_set.update({2 : self.get_mapping,
                                   3 : self.set_mapping,
                                   7 : self.delay_tracker,
-                                  12: self.reset_xaui,
-                                  13: self.arm_sync,
-                                  14: self.noise_mode,
-                                  15: self._board,
-                                  36: self.get_delays,
-                                  37: self.set_delays,
-                                  38: self.get_gains,
-                                  39: self.set_gains,
-                                  40: self.get_thresholds,
-                                  41: self.set_thresholds,
-                                  64: self.get_dbe_gains,
-                                  65: self.set_dbe_gains,})
+                                  12 : self.reset_xaui,
+                                  13 : self.arm_sync,
+                                  14 : self.noise_mode,
+                                  15 : self._board,
+                                  36 : self.get_delays,
+                                  37 : self.set_delays,
+                                  38 : self.get_gains,
+                                  39 : self.set_gains,
+                                  40 : self.get_thresholds,
+                                  41 : self.set_thresholds,
+                                  64 : self.get_dbe_gains,
+                                  65 : self.set_dbe_gains,
+                                  128 : self.get_correlation})
         self.setup()
         #self.sync_all()
         self.start_checks_loop(30.0)
@@ -603,6 +606,18 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             self._dbe.bramwrite('pol0/gainctrl%d' %(chan%2), gain, int(chan/2.))
         return self.get_dbe_gains('')
 
+    @debug
+    def get_correlation(self, args):
+        """ inst.get_correlation() -> single_udp_packet
+        Gets the next correlation from the correlator client, returns -1 if there is no
+        correlation ready. Note: it is preferable to use a direcy UDP client instead of
+        this function but it is provided to enable secure remote operations."""
+        try:
+            pkt = self._correlator_client._request('', 0)
+            return pack('!B%ds' % len(pkt), 0, pkt)
+        except NoCorrelations:
+            return SBYTE.pack(-1)
+
     @info
     def get_thresholds(self, args):
         """ inst.get_thresholds(ant=[1,2,3,4,...]) -> values=[16, 16, 16,...]
@@ -740,6 +755,19 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         if err:
             self.logger.warning("error setting DBE channel gains!")
         return unpack('!16I', resp)
+
+    @debug
+    def get_correlation(self):
+        cmd = BYTE.pack(128)
+        size, err, resp = self._request(cmd)
+        if err:
+            raise NoCorrelations
+        corr_time, left, right, current, total = BEE2CorrelationProvider._header_struct.unpack(
+            resp[:BEE2CorrelationProvider._header_size]
+            )
+        return corr_time, left, right, current, total, loads(
+            resp[BEE2CorrelationProvider._header_size:]
+            )
 
     @debug
     def delay_tracker(self, on=True):

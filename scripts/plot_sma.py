@@ -22,7 +22,8 @@ from phringes.plotting.rtplot import RealTimePlot
 
 
 logging.basicConfig()
-logging.getLogger().setLevel(logging.ERROR)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 root = Tk()
@@ -58,10 +59,10 @@ def update_plots(widget, baselines):
         corr_time, left, right, current, total, correlation = correlator.get_correlation()
         lags, visibility, phase_fit = correlation
         baseline = left, right
-        correlator.logger.info('received baseline %s' % repr(baseline))
+        logger.debug('received baseline %s' % repr(baseline))
     except NoCorrelations:
         widget.after(1, update_plots, widget, baselines)
-        return
+        return # it never comes to this
     if baseline not in baselines.keys():
         corr.axes.grid()
         #corr.axes.set_xlabel('Lag', size='large')
@@ -74,7 +75,9 @@ def update_plots(widget, baselines):
         phase_line, fit_line = baselines[baseline]
         corr.update_line(phase_line, f, angle(visibility))
         corr.update_line(fit_line, f, real(phase_fit))
-    widget.update()
+    if current == total-1:
+        widget.update()
+        logger.info('update in')
     widget.after_idle(update_plots, widget, baselines)
 
 
