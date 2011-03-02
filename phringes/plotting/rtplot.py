@@ -52,11 +52,12 @@ class RealTimePlot(FigureCanvasTkAgg):
             xy = array([append(x, x[::-1]), append(y, ybottom)]).transpose()
             l.fill_under = self.axes.add_patch(Polygon(xy, **kwargs))
 
-    def update_line(self, line, xdata, ydata):
+    def update_line(self, line, xdata, ydata, do_reset=True):
         update_func = getattr(self, '_data_'+self.mode)
         line.set(xdata=update_func(line.get_xdata(), xdata),
                  ydata=update_func(line.get_ydata(), ydata))
-        self.reset_axes()
+        if do_reset:
+            self.reset_axes()
 
     def update(self, *args, **kwargs):
         xmax = None
@@ -69,7 +70,7 @@ class RealTimePlot(FigureCanvasTkAgg):
             ydata = line.get_ydata()
             ysum = ysum + sum(ydata)
             ynum = ynum + len(ydata)
-            self.update_line(line, args[2*i], args[2*i+1])
+            self.update_line(line, args[2*i], args[2*i+1], do_reset=False)
         self.reset_axes(xmax, ysum, ynum)
 
     def reset_axes(self, xmax=None, ysum=0, ynum=0):
