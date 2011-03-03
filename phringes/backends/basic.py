@@ -73,6 +73,7 @@ class BasicCorrelationProvider:
         self._stopevent = Event()
         self._lags = lags
         self._correlations = {}
+        self._last_correlation = time()
         self._include_baselines = include_baselines
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -117,6 +118,11 @@ class BasicCorrelationProvider:
                 self.broadcast()
             self._process()
 
+    @debug
+    def _data_iter(self):
+        for baseline, correlation in self._correlations.iteritems():
+            yield baseline, correlation.dumps()
+
     @info
     def correlate(self):
         """ inst.correlate() -> None
@@ -139,8 +145,7 @@ class BasicCorrelationProvider:
         subscriber."""
         current = 0
         total = len(self._correlations.keys())
-        for baseline, correlation in self._correlations.iteritems():
-            data = correlation.dumps() # numpy serialization
+        for baseline, data in self._data_iter():
             header = self._header_struct.pack(self._last_correlation,
                                               baseline[0], baseline[1],
                                               current, total)
