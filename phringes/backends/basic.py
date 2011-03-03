@@ -825,7 +825,7 @@ class BasicInterfaceClient(BasicNetworkClient):
         if err:
             raise Exception, "server not shutdown properly!"
 
-        
+
 class BasicTCPClient(BasicNetworkClient):
     """ A simple TCP client
     This is more suitable to a telnet-like server
@@ -868,7 +868,7 @@ class BasicTCPClient(BasicNetworkClient):
         args = argfmt.format(*args, **argsdict)
         try:
             return retparser(self._request(self.cmdfmt.format(cmd=cmd, args=args), retsize))
-        except (BasicNetworkError, SocketError):
+        except (BasicNetworkError, SocketError, ValueError):
             self.logger.error("errors occured, reconnecting...")
             if tries < self.retries:
                 try:
