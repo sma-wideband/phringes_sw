@@ -44,7 +44,7 @@ __all__ = [ 'K', 'BYTE', 'SBYTE', 'FLOAT',
 
 
 K = 1.3806503 * 10**-23 # m^2 * kg / s * K
-MAX_REQUEST_SIZE = 1024
+MAX_REQUEST_SIZE = 4096
 BYTE = Struct('!B')
 BYTE_SIZE = BYTE.size
 SBYTE = Struct('!b')
@@ -150,9 +150,13 @@ class BasicCorrelationProvider:
                                               baseline[0], baseline[1],
                                               current, total)
             current += 1
+            pkt = header + data
+            pkt_len = len(pkt) + SHORT_SIZE
+            self.logger.info('packet: %r' % pkt)
+            self.logger.info('sending {0} bytes of data, {1} bytes total'.format(len(data), pkt_len))
             for subscriber in self.subscribers:
                 udp_sock = socket(AF_INET, SOCK_DGRAM)
-                udp_sock.sendto(header+data, subscriber)
+                udp_sock.sendto(SHORT.pack(pkt_len)+pkt, subscriber)
                 udp_sock.close()
 
     @info
@@ -922,19 +926,28 @@ class BasicUDPClient(BasicNetworkClient):
     def _close_socket(self):
         self.sock.close()
 
-    def _request(self, data, resp_size):
+    def _request(self, data, size=None):
         buf = ""
-        while True:
+        while len(buf) < size or size is None:
+            if size is None:
+                get_bytes = MAX_REQUEST_SIZE
+            else:
+                get_bytes = size - len(buf)
             try:
-                data = self._sock_recv(MAX_REQUEST_SIZE)
-                if not data:
-                    raise NullPacketError, "socket sending Null strings!"
-                buf += data
-                self.logger.debug("buffer: %r" % buf)
-                if len(data) < MAX_REQUEST_SIZE:
-                    return buf
+                request = self._sock_recv(get_bytes)
             except SocketError:
                 raise NoCorrelations
+            if not request:
+                raise NullPacketError
+            if len(request)>=2 and size is None:
+                size = SHORT.unpack(request[:SHORT_SIZE])[0]
+            self.logger.debug('buffer: {0}({1})'.format(repr(buf), len(buf)))
+            self.logger.debug('request: {0}({1})'.format(repr(request), len(request)))
+            buf += request
+        if len(buf) != size:
+            self.logger.debug("response of size %d, should be %d" % (len(buf), size))
+            raise IncorrectSizeError, 'return packet is the wrong size!'
+        return buf[SHORT_SIZE:]
             
     @debug
     def reset(self):
