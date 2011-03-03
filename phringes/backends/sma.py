@@ -27,7 +27,7 @@ from numpy.random import randint
 from numpy.fft import fft, fftshift
 from numpy import array as narray
 from numpy import (
-    arange, angle, concatenate, loads
+    zeros, arange, angle, concatenate, loads
     )
 
 from phringes.backends import _dds
@@ -164,12 +164,28 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info('baselines: %r' % include_baselines)
         BasicCorrelationProvider.__init__(self, server, include_baselines, lags)
+        self._complex_lags = dict((b, zeros(self._lags-1)) for b in include_baselines)
+        self._visibilities = dict((b, zeros(self._lags-1)) for b in include_baselines)
+        self._phase_fits = dict((b, ((0., 0.), zeros(self._lags-1))) for b in include_baselines)
         self.bee2_host, self.bee2_port = bee2_host, bee2_port
         self.bee2 = BEE2Client(bee2_host, port=bee2_port)
         self.bee2._connected.wait()
 
     def _process(self):
         self.fringe() # populates all the lags
+
+    def _data_iter(self):
+        for baseline in self._include_baselines:
+            lags = self._complex_lags[baseline]
+            visibilities = self._visibilities[baseline]
+            phase_fits = self._phase_fits[baseline][1]
+            m, c = self._phase_fits[baseline][0]
+            yield (baseline, 
+                lags.dumps() +
+                visibilities.dumps() + 
+                phase_fits.dumps() +
+                FLOAT.pack(m) + FLOAT.pack(c)
+                )
 
     @debug
     def _read_lag(self, other, sideband):
@@ -207,12 +223,14 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
             if refant in baseline:
                 refindex = baseline.index(refant)
                 other = mapping[baseline[not refindex]]
-                lags = self._read_lag(other, 'usb')
-                span = 100 * (abs(lags).max() - abs(lags).min()) / (2**31)
-                self.logger.info('baseline %s: span=%.4f%%' % (repr(baseline), span))
-                visibility = self.get_visibility(lags)
-                (phase, delay), phase_fit = get_phase_fit(arange(-7., 8.), angle(visibility))
-                self._correlations[baseline] = narray([lags[1:], visibility, phase_fit])
+                self._complex_lags[baseline] = self._read_lag(other, 'usb')
+                #span = 100 * (abs(lags).max() - abs(lags).min()) / (2**31)
+                #self.logger.info('baseline %s: span=%.4f%%' % (repr(baseline), span))
+                self._visibilities[baseline] = self.get_visibility(self._complex_lags[baseline])
+                self._phase_fits[baseline] = get_phase_fit(
+                    arange(-(self._lags/2-1), self._lags/2),
+                    angle(self._visibilities[baseline])
+                    )
 
 
 class BEE2CorrelatorClient(BasicUDPClient):
