@@ -152,8 +152,8 @@ class BasicCorrelationProvider:
             current += 1
             pkt = header + data
             pkt_len = len(pkt) + SHORT_SIZE
-            self.logger.info('packet: %r' % pkt)
-            self.logger.info('sending {0} bytes of data, {1} bytes total'.format(len(data), pkt_len))
+            self.logger.debug('packet: %r' % pkt)
+            self.logger.debug('sending {0} bytes of data, {1} bytes total'.format(len(data), pkt_len))
             for subscriber in self.subscribers:
                 udp_sock = socket(AF_INET, SOCK_DGRAM)
                 udp_sock.sendto(SHORT.pack(pkt_len)+pkt, subscriber)
