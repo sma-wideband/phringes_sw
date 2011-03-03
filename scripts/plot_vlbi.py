@@ -57,8 +57,7 @@ colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
 
 def update_plots(widget, baselines):
     try:
-        corr_time, left, right, current, total, correlation = server.get_correlation()
-        lags, visibility, phase_fit = correlation
+        corr_time, left, right, current, total, lags, visibility, phase_fit, m, c = server.get_correlation()
         baseline = left, right
         logger.debug('received baseline %s' % repr(baseline))
     except NoCorrelations:
