@@ -27,7 +27,7 @@ from numpy.random import randint
 from numpy.fft import fft, fftshift
 from numpy import array as narray
 from numpy import (
-    zeros, arange, angle, concatenate, loads
+    zeros, arange, angle, concatenate, ceil, loads
     )
 
 from phringes.backends import _dds
@@ -164,9 +164,10 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info('baselines: %r' % include_baselines)
         BasicCorrelationProvider.__init__(self, server, include_baselines, lags)
-        self._complex_lags = dict((b, zeros(self._lags-1)) for b in include_baselines)
-        self._visibilities = dict((b, zeros(self._lags-1)) for b in include_baselines)
-        self._phase_fits = dict((b, ((0., 0.), zeros(self._lags-1))) for b in include_baselines)
+        self._complex_lags = dict((b, zeros(self._lags, dtype=complex)) for b in include_baselines)
+        self._visibilities = dict((b, zeros(self._lags-1, dtype=complex)) for b in include_baselines)
+        self._phase_fits = dict((b, zeros(self._lags-1)) for b in include_baselines)
+        self._phase_params = dict((b, (0., 0.)) for b in include_baselines)
         self.bee2_host, self.bee2_port = bee2_host, bee2_port
         self.bee2 = BEE2Client(bee2_host, port=bee2_port)
         self.bee2._connected.wait()
@@ -178,14 +179,16 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
         for baseline in self._include_baselines:
             lags = self._complex_lags[baseline]
             visibilities = self._visibilities[baseline]
-            phase_fits = self._phase_fits[baseline][1]
-            m, c = self._phase_fits[baseline][0]
-            yield (baseline, 
+            phase_fits = self._phase_fits[baseline]
+            m, c = self._phase_params[baseline]
+            data = (
                 lags.dumps() +
                 visibilities.dumps() + 
                 phase_fits.dumps() +
                 FLOAT.pack(m) + FLOAT.pack(c)
                 )
+            #self.logger.info(repr(data))
+            yield baseline, data
 
     @debug
     def _read_lag(self, other, sideband):
@@ -197,7 +200,8 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
 
     @debug
     def get_visibility(self, lags):
-        shifted = concatenate((lags[8:], lags[1:8]))
+        middle = ceil(len(lags)/2)
+        shifted = concatenate((lags[middle:], lags[1:middle]))
         return fftshift(fft(shifted))
 
     @info
@@ -227,7 +231,7 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
                 #span = 100 * (abs(lags).max() - abs(lags).min()) / (2**31)
                 #self.logger.info('baseline %s: span=%.4f%%' % (repr(baseline), span))
                 self._visibilities[baseline] = self.get_visibility(self._complex_lags[baseline])
-                self._phase_fits[baseline] = get_phase_fit(
+                self._phase_params[baseline], self._phase_fits[baseline] = get_phase_fit(
                     arange(-(self._lags/2-1), self._lags/2),
                     angle(self._visibilities[baseline])
                     )
@@ -239,15 +243,27 @@ class BEE2CorrelatorClient(BasicUDPClient):
         BasicUDPClient.__init__(self, host, port)
         self._header_struct = BEE2CorrelationProvider._header_struct
         self._header_size = BEE2CorrelationProvider._header_size
+        self.visibs_size = len(zeros(size-1, dtype=complex).dumps())
+        self.lags_size = len(zeros(size, dtype=complex).dumps())
+        self.fits_size = len(zeros(size-1).dumps())
+        self.unpacker = Struct('!{0}s{1}s{2}sff'.format(
+            self.lags_size, self.visibs_size, self.fits_size
+            ))
         self.host, self.port = host, port
         self._stopevent = Event()
         self.size = size
 
     @debug
     def get_correlation(self):
-        pkt = self._request('', 0) # raises NoCorrelation if none ready
+        pkt = self._request('') # raises NoCorrelation if none ready
+        self.logger.debug('received: %r' % pkt)
+        data = pkt[self._header_size:] # should be 3 arrays and 2 floats
         corr_time, left, right, current, total = self._header_struct.unpack(pkt[:self._header_size])
-        return corr_time, left, right, current, total, loads(pkt[self._header_size:])
+        lagss, visibss, fitss, m, c = self.unpacker.unpack(data)
+        return (
+            corr_time, left, right, current, total, # header information
+            loads(lagss), loads(visibss), loads(fitss), m, c # data
+            )
 
     @debug
     def _receive_loop(self, queue):
@@ -631,7 +647,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         correlation ready. Note: it is preferable to use a direcy UDP client instead of
         this function but it is provided to enable secure remote operations."""
         try:
-            pkt = self._correlator_client._request('', 0)
+            pkt = self._correlator_client._request('')
             return pack('!B%ds' % len(pkt), 0, pkt)
         except NoCorrelations:
             return SBYTE.pack(-1)
@@ -707,8 +723,14 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
 class SubmillimeterArrayClient(BasicInterfaceClient):
 
-    def __init__(self, host, port, timeout=10):
+    def __init__(self, host, port, timeout=10, corr_size=16):
         BasicInterfaceClient.__init__(self, host, port, timeout=timeout)
+        self.visibs_size = len(zeros(corr_size-1, dtype=complex).dumps())
+        self.lags_size = len(zeros(corr_size, dtype=complex).dumps())
+        self.fits_size = len(zeros(corr_size-1).dumps())
+        self.unpacker = Struct('!{0}s{1}s{2}sff'.format(
+            self.lags_size, self.visibs_size, self.fits_size
+            ))
 
     @debug
     def reset_xaui(self, lev=6):
@@ -777,14 +799,17 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
     @debug
     def get_correlation(self):
         cmd = BYTE.pack(128)
-        size, err, resp = self._request(cmd)
+        size, err, pkt = self._request(cmd)
         if err:
             raise NoCorrelations
-        corr_time, left, right, current, total = BEE2CorrelationProvider._header_struct.unpack(
-            resp[:BEE2CorrelationProvider._header_size]
-            )
-        return corr_time, left, right, current, total, loads(
-            resp[BEE2CorrelationProvider._header_size:]
+        self.logger.debug('received: %r' % pkt)
+        header_struct = BEE2CorrelationProvider._header_struct
+        data = pkt[header_struct.size:] # should be 3 arrays and 2 floats
+        corr_time, left, right, current, total = header_struct.unpack(pkt[:header_struct.size])
+        lagss, visibss, fitss, m, c = self.unpacker.unpack(data)
+        return (
+            corr_time, left, right, current, total, # header information
+            loads(lagss), loads(visibss), loads(fitss), m, c # data
             )
 
     @debug
