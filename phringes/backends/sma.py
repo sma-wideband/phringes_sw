@@ -328,6 +328,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
                                   3 : self.set_mapping,
+                                  5 : self.load_walsh_table,
+                                  6 : self.clear_walsh_table,
                                   7 : self.delay_tracker,
                                   12 : self.reset_xaui,
                                   13 : self.arm_sync,
@@ -373,6 +375,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         ipa.regwrite('insel', 0)
         ipa.regwrite('smasel', 0)
         ipa.regwrite('monsel', 2)
+        ipa.regwrite('walsh/colsel', 31 | 30*2**8 | 29*2**16 | 28*2**24)
+        ipa.regwrite('walsh/syncsel', 1)
         ipa.regwrite('start_xaui', 1)
 
     @debug
@@ -520,6 +524,40 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             else:
                 self.logger.info("delay tracker stopped")
                 self.stop_delay_tracker()
+        return SBYTE.pack(0)
+
+    @info
+    def clear_walsh_table(self, args):
+        for name, ibob in self._ipas.iteritems():
+            for step in range(64):
+                ibob.bramwrite('walsh/table/90', 0, location=step)
+                ibob.bramwrite('walsh/table/180', 0, location=step)
+        return SBYTE.pack(0)
+
+    @info
+    def load_walsh_table(self, args):
+        try:
+            walsh_table = self._dds.get_walsh_pattern()
+        except:
+            self.logger.error("problem communicating with the DDS!")
+            return SBYTE.pack(-1)
+        for step in range(64):
+            cur90 = dict.fromkeys(self._ipas.values(), 0)
+            cur180 = dict.fromkeys(self._ipas.values(), 0)
+            for antenna, steps in walsh_table.items():
+                try:
+                    ibob, col = self._input_ibob_map[self._mapping[antenna]]
+                except KeyError:
+                    self.logger.warning("antenna %d not in array" % antenna)
+                    walsh_table.pop(antenna)
+                    continue
+                bit90 = (steps[step] >> 1) & 1 # extract top bit
+                bit180 = steps[step] & 1 # and extract bottom bit
+                cur90[ibob] = cur90[ibob] | (bit90 << col)
+                cur180[ibob] = cur180[ibob] | (bit180 << col)
+            for ibob in self._ipas.values():
+                ibob.bramwrite('walsh/table/90', cur90[ibob], location=step)
+                ibob.bramwrite('walsh/table/180', cur180[ibob], location=step)
         return SBYTE.pack(0)
 
     @debug
@@ -812,6 +850,20 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
             corr_time, left, right, current, total, # header information
             loads(lagss), loads(visibss), loads(fitss), m, c # data
             )
+
+    @debug
+    def load_walsh_table(self):
+        cmd = BYTE.pack(5)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.error("error loading Walsh table!")
+
+    @debug
+    def clear_walsh_table(self):
+        cmd = BYTE.pack(6)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.error("error clearing Walsh table!")
 
     @debug
     def delay_tracker(self, on=True):
