@@ -60,7 +60,7 @@ class BasicCorrelationProvider:
     from a BasicTCPServer instance and sends out one UDP
     data packet per baseline to a list of subscribers."""
 
-    _header_struct = Struct('!fBBBB')
+    _header_struct = Struct('!dBBBB')
     _header_size = _header_struct.size
 
     @debug
@@ -145,10 +145,13 @@ class BasicCorrelationProvider:
         subscriber."""
         current = 0
         total = len(self._include_baselines)
+        self.logger.info('new correlation at %f' % self._last_correlation)
         for baseline, data in self._data_iter():
-            header = self._header_struct.pack(self._last_correlation,
-                                              baseline[0], baseline[1],
-                                              current, total)
+            header = self._header_struct.pack(
+                self._last_correlation,
+                baseline[0], baseline[1],
+                current, total
+                )
             current += 1
             pkt = header + data
             pkt_len = len(pkt) + SHORT_SIZE

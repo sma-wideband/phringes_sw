@@ -259,6 +259,7 @@ class BEE2CorrelatorClient(BasicUDPClient):
         self.logger.debug('received: %r' % pkt)
         data = pkt[self._header_size:] # should be 3 arrays and 2 floats
         corr_time, left, right, current, total = self._header_struct.unpack(pkt[:self._header_size])
+        print corr_time
         lagss, visibss, fitss, m, c = self.unpacker.unpack(data)
         return (
             corr_time, left, right, current, total, # header information
