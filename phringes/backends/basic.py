@@ -144,7 +144,7 @@ class BasicCorrelationProvider:
         Constructs UDP packets and sends one packet per baseline per
         subscriber."""
         current = 0
-        total = len(self._correlations.keys())
+        total = len(self._include_baselines)
         for baseline, data in self._data_iter():
             header = self._header_struct.pack(self._last_correlation,
                                               baseline[0], baseline[1],
