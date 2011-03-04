@@ -159,7 +159,7 @@ _dds_sendphases(PyObject *self, PyObject *args)
   templist = PyList_New(DDS_N_ANTENNAS); // new reference
   for (antenna = 0; antenna < DDS_N_ANTENNAS; antenna++) {
 
-    err = PyList_SetItem(templist, antenna, PyInt_FromLong(data->a[antenna]));
+    err = PyList_SetItem(templist, antenna, PyFloat_FromDouble(data->a[antenna]));
     if (err < 0) {
       PyErr_SetString(PyExc_Exception, "Error setting an a (delay precursor) value!");
       Py_DECREF(templist); // clean-up
@@ -184,7 +184,7 @@ _dds_sendphases(PyObject *self, PyObject *args)
   templist = PyList_New(DDS_N_ANTENNAS); // new reference
   for (antenna = 0; antenna < DDS_N_ANTENNAS; antenna++) {
 
-    err = PyList_SetItem(templist, antenna, PyInt_FromLong(data->b[antenna]));
+    err = PyList_SetItem(templist, antenna, PyFloat_FromDouble(data->b[antenna]));
     if (err < 0) {
       PyErr_SetString(PyExc_Exception, "Error setting a b (delay precursor) value!");
       Py_DECREF(templist); // clean-up
@@ -209,7 +209,7 @@ _dds_sendphases(PyObject *self, PyObject *args)
   templist = PyList_New(DDS_N_ANTENNAS); // new reference
   for (antenna = 0; antenna < DDS_N_ANTENNAS; antenna++) {
 
-    err = PyList_SetItem(templist, antenna, PyInt_FromLong(data->c[antenna]));
+    err = PyList_SetItem(templist, antenna, PyFloat_FromDouble(data->c[antenna]));
     if (err < 0) {
       PyErr_SetString(PyExc_Exception, "Error setting a c (delay precursor) value!");
       Py_DECREF(templist); // clean-up
