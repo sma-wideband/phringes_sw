@@ -47,6 +47,10 @@ parser.add_option("--block", action="store",
                   help="start the correlator on BLOCK, can be 'high' or 'low' "
                   "(default 'high')",
                   metavar="BLOCK")
+parser.add_option("--dds-host", action="store",
+                  dest="dds_host", default="128.171.116.189",
+                  help="the DDS HOST, defaults to 'newdds'",
+                  metavar="HOST")
 (options, args) = parser.parse_args()
 
 
@@ -89,7 +93,7 @@ HOST, PORT = options.host, options.port
 server = SubmillimeterArrayTCPServer((HOST, PORT), include_baselines=options.include_baselines,
                                      initial_int_time=1, bee2_host=bee2_host, bee2_port=bee2_port,
                                      correlator_bitstream=bee2_bitstream, ipa_hosts=ipa_hosts,
-                                     dbe_host=dbe_host)
+                                     dbe_host=dbe_host, dds_host=options.dds_host)
 ip, port = server.server_address
 
 logger.info('starting server on port %d'%port)

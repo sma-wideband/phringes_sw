@@ -31,6 +31,7 @@ from numpy import (
     )
 
 from phringes.backends import _dds
+from phringes.backends import dDS_clnt # old Python-only client
 from phringes.core.utils import get_phase_fit
 from phringes.core.bee2 import BEE2Client
 from phringes.core.ibob import IBOBClient
@@ -61,6 +62,7 @@ class DDSClient:
     @debug
     def __init__(self, dds_host):
         self.host = dds_host
+        self.dds_clnt = dDS_clnt.DDSClient(dds_host)
 
     @debug
     def get_walsh_pattern(self):
@@ -70,7 +72,16 @@ class DDSClient:
     def query_dds(self, phases):
         if phases == None:
             phases = [0.]*11
-        return _dds.sendphases(self.host, phases)
+        #return _dds.sendphases(self.host, phases)
+        obj = self.dds_clnt.ddsPAPUpdate(phases)
+        return {'a': obj.a,
+                'b': obj.b,
+                'c': obj.c,
+                'antennaExists': obj.antennaExists,
+                'rA': obj.rA,
+                'refLat': obj.refLat,
+                'refLong': obj.refLong,
+                'refRad': obj.refRad}
 
     @debug
     def get_local_sidereal_time(self, at_time, longitude):
@@ -107,7 +118,7 @@ class DDSClient:
         ut = 1.002737909*ut_hours
         tmp = int((ut+t0)/24.)
         gmst = ut + t0 - tmp*24.
-        # 
+       # 
         # Finally, find the LST using page 20
         #
         long_tdiff = (longitude*(180/pi))/15.
@@ -294,7 +305,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                  bee2_host='b02.ata.pvt', bee2_port=7147,
                  correlator_bitstream='bee2_calib_corr.bof',
                  ipa_hosts=('169.254.128.3', '169.254.128.2'),
-                 dbe_host='169.254.128.0', dds_host='128.171.116.182'):
+                 dbe_host='169.254.128.0', dds_host='128.171.116.189'):
         """ SubmillimeterArrayTCPServer(address, handler, correlator, lags, baselines)
         This subclasses the BasicTCPServer and adds some methods needed for
         controlling and reading data from the BEE2CorrelationProvider. Please see 
@@ -308,6 +319,10 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                       lags=correlator_lags, bof=correlator_bitstream)
         self._correlator_client = BEE2CorrelatorClient('0.0.0.0', 8332) # user must add_subscriber
         self.bee2_host, self.bee2_port, self.bee2_bitstream = bee2_host, bee2_port, correlator_bitstream
+        self._delay_tracker_thread = Thread(target=self._delay_tracker)
+        self._delay_tracker_stopevent = Event()
+        self._checks_thread = Thread(target=self._checks_loop)
+        self._checks_stopevent = Event()
         self._bee2 = BEE2Client(bee2_host, port=bee2_port)
         self._bee2._connected.wait()
         self._dds = DDSClient(dds_host)
@@ -469,29 +484,26 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                     period = self._delay_tracker_period
                     delays = self._dds.get_delays(start+period)
             except:
-                logger.error("Problem communicating with the DDS!")
+                logger.error("Problem communicating with the DDS! Waiting for %d second ... " % period)
                 self._delay_tracker_stopevent.wait(period)
                 continue
             while time() < start+period:
                 self._delay_tracker_stopevent.wait(period/10.)
             with RLock():
                 self.run_delay_tracker(delays)
-            logger.info('|'.join('%d:%.2f'%(a, d) for a, d in delays.iteritems() if a in self._antennas))
+            logger.info('|'.join('%d:%.2f'%(a, 4000-d) for a, d in delays.iteritems() if a in self._antennas))
 
     @debug
     def start_checks_loop(self, period):
         self.logger.info('starting check loop at %s (period %.2f)' % (asctime(), period))
         self._checks_period = period
-        self._checks_stopevent = Event()
-        self._checks_thread = Thread(target=self._checks_loop)
         self._checks_thread.start()
 
     @debug
     def start_delay_tracker(self, period):
         self.logger.info('starting delay tracker at %s (period %.2f)' % (asctime(), period))
-        self._delay_tracker_period = period
-        self._delay_tracker_stopevent = Event()
         self._delay_tracker_thread = Thread(target=self._delay_tracker)
+        self._delay_tracker_period = period
         self._delay_tracker_thread.start()
 
     @debug
@@ -515,15 +527,15 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                 self.logger.warning("delay tracker already started!")
                 return SBYTE.pack(-1)
             else:
-                self.logger.info("delay tracker started")
-                self.start_delay_tracker()
+                self.stop_delay_tracker()
+                self.logger.info("delay tracker stopped")
         else:
             if not on:
                 self.logger.warning("delay tracker has not been started!")
                 return SBYTE.pack(-2)
             else:
-                self.logger.info("delay tracker stopped")
-                self.stop_delay_tracker()
+                self.start_delay_tracker(4)
+                self.logger.info("delay tracker started")
         return SBYTE.pack(0)
 
     @info
@@ -571,7 +583,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             return ((regvalue-64)/(16*adc_per_ns)) % (2**17)
         elif mode=='set':
             total = value + self._delay_offsets[antenna]
-            regvalue = (round(16*adc_per_ns*value)+64) % (2**17)
+            regvalue = (round(16*adc_per_ns*total)+64) % (2**17)
             ibob.regwrite(regname, int(regvalue))
             return self._delay_handler('get', antenna, ibob, ibob_input)
 
