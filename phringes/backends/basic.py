@@ -873,13 +873,14 @@ class BasicTCPClient(BasicNetworkClient):
         self._open_socket()
 
     @debug
-    def _command(self, cmd, args, argsdict, argfmt, retparser, retsize):
+    def _command(self, cmd, args, argsdict, argfmt, retparser, retsize, tries=None):
         """ _command is just a wrapper for _request that catches LWIPError
         exceptions and closes and reopens the connection"""
-        tries = 1
-        args = argfmt.format(*args, **argsdict)
+        if tries is None:
+            tries = 1
+        args_str = argfmt.format(*args, **argsdict)
         try:
-            return retparser(self._request(self.cmdfmt.format(cmd=cmd, args=args), retsize))
+            return retparser(self._request(self.cmdfmt.format(cmd=cmd, args=args_str), retsize))
         except (BasicNetworkError, SocketError, ValueError):
             self.logger.error("errors occured, reconnecting...")
             if tries < self.retries:
@@ -887,7 +888,7 @@ class BasicTCPClient(BasicNetworkClient):
                     self.reconnect()
                 except SocketTimeout:
                     pass
-                return self._command(cmd, args, argsdict, argfmt, retparser, retsize)
+                return self._command(cmd, args, argsdict, argfmt, retparser, retsize, tries+1)
             else:
                 self.logger.error("exheeded retry count!")
 
