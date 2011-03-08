@@ -512,12 +512,14 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             msg = "{board}/{0}: (period {1})(syncs {2})(errors: {3})(linkdowns: {4})"
             for xaui in ['xaui0', 'xaui1']:
                 prefix = xaui+regsep
-                if board.regread(prefix+'rx_linkdown'):
+                with RLock():
+                    linkdown = board.regread(prefix+'rx_linkdown')
+                    period = board.regread(prefix+'period')
+                    sync_cnt = board.regread(prefix+'sync_cnt')
+                    period_err_cnt = board.regread(prefix+'period_err_cnt')
+                    linkdown_cnt = board.regread(prefix+'linkdown_cnt')
+                if linkdown:
                     self.logger.error('{board} {0} link is down!'.format(xaui, board=board_name))
-                period = board.regread(prefix+'period')
-                sync_cnt = board.regread(prefix+'sync_cnt')
-                period_err_cnt = board.regread(prefix+'period_err_cnt')
-                linkdown_cnt = board.regread(prefix+'linkdown_cnt')
                 board.logger.info(msg.format(xaui, period, sync_cnt, period_err_cnt,
                                             linkdown_cnt, board=board_name))
 
@@ -547,7 +549,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         while not self._checks_stopevent.isSet():
             with RLock():
                 checks_period = self._checks_period
-                self.run_checks()
+            self.run_checks()
             self._checks_stopevent.wait(checks_period)
 
     @debug
@@ -584,7 +586,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def start_phase_tracker(self, period):
-        self.logger.info('starting delay tracker at %s (period %.2f)' % (asctime(), period))
+        self.logger.info('starting phase tracker at %s (period %.2f)' % (asctime(), period))
         self._phase_tracker = PhaseTracker(self, '0.0.0.0', 9453)
         self._correlator.add_subscriber(('0.0.0.0', 9453))
         self._phase_tracker.start(period)

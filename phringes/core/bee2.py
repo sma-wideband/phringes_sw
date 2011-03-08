@@ -26,8 +26,9 @@ class BEE2Client(BlockingClient):
     #pylint: disable=R0904
 
     @debug
-    def __init__(self, host, port=7147, tb_limit=20, timeout=10.0):
+    def __init__(self, host, port=7147, tb_limit=20, timeout=10.0, retries=10):
         self._timeout = timeout
+        self._retries = retries
         katcp_logger = logging.Logger("katcp")
         katcp_logger.addHandler(NullHandler())
         BlockingClient.__init__(self, host, port, tb_limit=tb_limit,
@@ -37,9 +38,14 @@ class BEE2Client(BlockingClient):
         self.start(daemon=True)
 
     @debug
-    def _request(self, name, *args):
+    def _request(self, name, *args, **kwargs):
         request = Message.request(name, *args)
-        reply, informs = self.blocking_request(request, keepalive=True)
+        try:
+            reply, informs = self.blocking_request(request, keepalive=True)
+        except TypeError:
+            retry = kwargs.pop('retry', 0)
+            self.logger.error("Error using blocking_request, try number %d" % retry)
+            return self._request(name, *args, retry=retry+1)
         if reply.arguments[0] != Message.OK:
             self._logger.error("Request %s failed.\n  Request: %s\n  Reply: %s."
                                % (request.name, request, reply))
