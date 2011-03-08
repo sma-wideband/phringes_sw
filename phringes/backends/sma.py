@@ -17,9 +17,11 @@ running on the DDS.
 
 import re
 import logging
+from collections import deque
 from math import pi, cos, sin
-from time import time, asctime, gmtime, sleep
 from struct import Struct, pack, unpack
+from datetime import datetime, timedelta
+from time import time, asctime, gmtime, sleep
 from threading import Thread, RLock, Event
 from Queue import Queue
 
@@ -27,7 +29,7 @@ from numpy.random import randint
 from numpy.fft import fft, fftshift
 from numpy import array as narray
 from numpy import (
-    zeros, arange, angle, concatenate, ceil, loads
+    array, zeros, arange, angle, concatenate, ceil, loads
     )
 
 from phringes.backends import _dds
@@ -179,6 +181,7 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
         self._visibilities = dict((b, zeros(self._lags-1, dtype=complex)) for b in include_baselines)
         self._phase_fits = dict((b, zeros(self._lags-1)) for b in include_baselines)
         self._phase_params = dict((b, (0., 0.)) for b in include_baselines)
+        self.delay_conv = (10**9) / ((self.server._bandwidth/self._lags) * 1.024 * 2 * pi) # ns*rad/lag
         self.bee2_host, self.bee2_port = bee2_host, bee2_port
         self.bee2 = BEE2Client(bee2_host, port=bee2_port)
         self.bee2._connected.wait()
@@ -191,12 +194,13 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
             lags = self._complex_lags[baseline]
             visibilities = self._visibilities[baseline]
             phase_fits = self._phase_fits[baseline]
-            m, c = self._phase_params[baseline]
+            m, phase = self._phase_params[baseline]
+            delay = m * self.delay_conv
             data = (
                 lags.dumps() +
                 visibilities.dumps() + 
                 phase_fits.dumps() +
-                FLOAT.pack(m) + FLOAT.pack(c)
+                FLOAT.pack(delay) + FLOAT.pack(phase)
                 )
             #self.logger.info(repr(data))
             yield baseline, data
@@ -245,7 +249,7 @@ class BEE2CorrelationProvider(BasicCorrelationProvider):
                 self._phase_params[baseline], self._phase_fits[baseline] = get_phase_fit(
                     arange(-(self._lags/2-1), self._lags/2),
                     angle(self._visibilities[baseline])
-                    )
+                    )              
 
 
 class BEE2CorrelatorClient(BasicUDPClient):
@@ -270,7 +274,6 @@ class BEE2CorrelatorClient(BasicUDPClient):
         self.logger.debug('received: %r' % pkt)
         data = pkt[self._header_size:] # should be 3 arrays and 2 floats
         corr_time, left, right, current, total = self._header_struct.unpack(pkt[:self._header_size])
-        print corr_time
         lagss, visibss, fitss, m, c = self.unpacker.unpack(data)
         return (
             corr_time, left, right, current, total, # header information
@@ -278,14 +281,25 @@ class BEE2CorrelatorClient(BasicUDPClient):
             )
 
     @debug
-    def _receive_loop(self, queue):
-        while not self._stopevent.isSet():
-            queue.put(self.get_correlation())
+    def _process(self):
+        try:
+            return self.get_correlation()
+        except NoCorrelations:
+            return None
 
     @debug
-    def start(self):
-        queue = Queue()
-        self._receive_thread = Thread(target=self._receive_loop, args=[queue,])
+    def _receive_loop(self, queue, period=1):
+        while not self._stopevent.isSet():
+            data = self._process()
+            if data is None:
+                self._stopevent.wait(period)
+            else:
+                queue.put_nowait(data)
+                
+    @debug
+    def start(self, period=1):
+        queue = Queue(maxsize=64)
+        self._receive_thread = Thread(target=self._receive_loop, args=[queue, period])
         self._receive_thread.start()
         return queue
 
@@ -293,7 +307,67 @@ class BEE2CorrelatorClient(BasicUDPClient):
     def stop(self):
         self._stopevent.set()
         self._receive_thread.join()
-        
+
+
+class PhaseTracker(BEE2CorrelatorClient):
+
+    def __init__(self, server, host, port, size=16, maxlen=10):
+        BEE2CorrelatorClient.__init__(self, host, port, size)
+        self.server = server # needed to adjust delay/phase offsets
+        self.rms_thresh = pi/8 # radian
+        self.maxlen = maxlen
+        self.delgran = 1./16
+        self.phgran = 1 # degrees
+        self.corrections = {}
+        self.phases = {}
+        self.refant = 6
+
+    @debug
+    def _is_bad(self, phase_hist):
+        return phase_hist.std() > self.rms_thresh
+
+    @debug
+    def _get_correction(self, phase_hist):
+        return -phase_hist.mean()*(180/pi)
+
+    def _process(self):
+        try:
+            (corr_time, left, right, current, total,
+             lags, visibility, phase_fit, delay, phase) = self.get_correlation()
+        except NoCorrelations:
+            return None
+        baseline = left, right
+        refindex = baseline.index(self.refant) # obviously this only works if
+        other = baseline[not refindex]         # the reference is part of the baseline
+        if other not in self.phases:
+            self.phases[other] = deque([phase], maxlen=self.maxlen)
+            self.corrections[other] = None
+        else:
+            self.phases[other].append(phase)
+        if len(self.phases[other]) < self.maxlen:
+            return None # phase history isn't full, get out!
+        phase_hist = array(self.phases[other])
+        if self._is_bad(phase_hist):
+            return None # baseline is too noisy, next!
+        #if abs(delay) >= self.delgran:
+        #    with RLock():
+        #        old_delay = self.server.get_value('_delay_offsets', other)
+        #        updated_delay = self.server.set_value('_delay_offsets', other, delay+old_delay)
+        #    self.logger.info('corrected to {0:.4f} ns the delay of antenna {1}'.format(updated_delay, other))
+        phase_correction = self._get_correction(phase_hist) # in degrees
+        with RLock():
+            itime = self.server._bee2.regread('integ_time')
+        if self.corrections[other] is not None and \
+               corr_time - self.corrections[other] < 3 * itime:
+            return None # too soon to adjust phase again
+        if abs(phase_correction) >= self.phgran: 
+            with RLock():
+                old_phase = self.server.get_value('_phase_offsets', other)
+                updated_phase = self.server.set_value('_phase_offsets', other, phase_correction+old_phase)
+                self.corrections[other] = corr_time
+            self.logger.info('corrected the phase of antenna {1} to {0:.4f} degs'.format(updated_phase, other))
+            return None
+            
 
 class SubmillimeterArrayTCPServer(BasicTCPServer):
 
@@ -363,10 +437,12 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         #self.sync_all()
         self.start_checks_loop(30.0)
         #self.start_delay_tracker(4.0)
+        self.start_phase_tracker(1)
 
     def shutdown(self, args):
         self.stop_checks_loop()
         #self.stop_delay_tracker()
+        self.stop_phase_tracker()
         return BasicTCPServer.shutdown(self, args)
 
     @info
@@ -507,6 +583,13 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._delay_tracker_thread.start()
 
     @debug
+    def start_phase_tracker(self, period):
+        self.logger.info('starting delay tracker at %s (period %.2f)' % (asctime(), period))
+        self._phase_tracker = PhaseTracker(self, '0.0.0.0', 9453)
+        self._correlator.add_subscriber(('0.0.0.0', 9453))
+        self._phase_tracker.start(period)
+
+    @debug
     def stop_checks_loop(self):
         self._checks_stopevent.set()
         self._checks_thread.join()
@@ -515,6 +598,11 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     def stop_delay_tracker(self):
         self._delay_tracker_stopevent.set()
         self._delay_tracker_thread.join()
+
+    @debug
+    def stop_phase_tracker(self):
+        self._phase_tracker.stop()
+        self._correlator.remove_subscriber(('0.0.0.0', 9453))
 
     @info
     def delay_tracker(self, args):
