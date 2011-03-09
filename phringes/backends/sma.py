@@ -320,7 +320,11 @@ class PhaseTracker(BEE2CorrelatorClient):
         self.phgran = 1 # degrees
         self.corrections = {}
         self.phases = {}
-        self.refant = 6
+        with RLock(): # do all server stuff here
+            mapping = self.server._mapping.copy()
+            refinp = self.server._bee2.regread('refant')
+        rev_mapping = dict((v, k) for k, v in mapping.iteritems())
+        self.refant = rev_mapping[refinp]
 
     @debug
     def _is_bad(self, phase_hist):
