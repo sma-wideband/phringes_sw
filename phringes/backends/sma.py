@@ -377,7 +377,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BEE2CorrelationProvider,
-                 antennas=range(1, 9), correlator_lags=16, 
+                 reference=6, antennas=range(1, 9), correlator_lags=16, 
                  include_baselines='*-*', initial_int_time=16, 
                  analog_bandwidth=512000000.0, antenna_diameter=3,
                  bee2_host='b02.ata.pvt', bee2_port=7147,
@@ -407,6 +407,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._ipa0 = IBOBClient(ipa_hosts[0], port=23)
         self._ipa1 = IBOBClient(ipa_hosts[1], port=23)
         self._dbe = IBOBClient(dbe_host, port=23)
+        self._reference_antenna = reference
         self._ipas = {'ipa0': self._ipa0, 'ipa1': self._ipa1}
         self._ibobs = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe}
         self._boards = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe, 'bee2': self._bee2}
@@ -481,6 +482,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     @debug
     def _setup_BEE2(self):
         self._bee2.progdev('bee2_complex_corr.bof')
+        self._bee2.regwrite('refant', self._mapping[self._reference_antenna])
         self._bee2.regwrite('syncsel', 2)
 
     @debug
@@ -585,6 +587,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     def start_delay_tracker(self, period):
         self.logger.info('starting delay tracker at %s (period %.2f)' % (asctime(), period))
         self._delay_tracker_thread = Thread(target=self._delay_tracker)
+        self._delay_tracker_stopevent.clear()
         self._delay_tracker_period = period
         self._delay_tracker_thread.start()
 
@@ -657,8 +660,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                     self.logger.warning("antenna %d not in array" % antenna)
                     walsh_table.pop(antenna)
                     continue
-                bit90 = (steps[step] >> 1) & 1 # extract top bit
-                bit180 = steps[step] & 1 # and extract bottom bit
+                bit90 = steps[step] & 1 # extract bottom bit
+                bit180 = (steps[step] >> 1) & 1 # extract top bit
                 cur90[ibob] = cur90[ibob] | (bit90 << col)
                 cur180[ibob] = cur180[ibob] | (bit180 << col)
             for ibob in self._ipas.values():

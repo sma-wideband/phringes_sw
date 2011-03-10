@@ -37,11 +37,10 @@ parser.add_option("-p", "--port", action="store", type="int",
                   dest="port", default=59999,
                   help="use PORT for accepting TCP connections, defaults to 59999",
                   metavar="PORT")
-parser.add_option("-b", "--baselines", action="store",
-                  dest="include_baselines", default="6-*",
-                  help="include BASELINES, format is N-M or NxM where N/M can either "
-                  "be antenna numbers or the wildcard *. So 4-* means all baselines to "
-                  "antenna 4", metavar="BASELINES")
+parser.add_option("-r", "--reference-antenna", action="store",
+                  dest="reference", type="int", default=6,
+                  help="selects which antenna is the reference.",
+                  metavar="REFERENCE")
 parser.add_option("--block", action="store",
                   dest="block", default="high",
                   help="start the correlator on BLOCK, can be 'high' or 'low' "
@@ -80,6 +79,7 @@ elif options.logfile:
 
 bee2_host = 'bee2'
 bee2_bitstream = 'bee2_complex_corr.bof'
+include_baselines = "{0}-*".format(options.reference)
 if options.block=="high":
     bee2_port = 7150
     ipa_hosts = ('ipahi0', 'ipahi1')
@@ -90,8 +90,9 @@ elif options.block=='low':
     dbe_host = 'dbelo'
 
 HOST, PORT = options.host, options.port
-server = SubmillimeterArrayTCPServer((HOST, PORT), include_baselines=options.include_baselines,
-                                     initial_int_time=1, bee2_host=bee2_host, bee2_port=bee2_port,
+server = SubmillimeterArrayTCPServer((HOST, PORT), reference=options.reference,
+                                     include_baselines=include_baselines, initial_int_time=1, 
+                                     bee2_host=bee2_host, bee2_port=bee2_port,
                                      correlator_bitstream=bee2_bitstream, ipa_hosts=ipa_hosts,
                                      dbe_host=dbe_host, dds_host=options.dds_host)
 ip, port = server.server_address
