@@ -10,5 +10,5 @@ setup(
     packages = ['phringes', 'phringes.core', 'phringes.backends', 'phringes.plotting', 'phringes.backends.poncrpc'],
     ext_modules = [Extension('phringes.backends._dds', ['src/dds.c', 'src/dDS_clnt.c', 'src/dDS_xdr.c'])],
     scripts=['scripts/init_sma.py', 'scripts/serve_sma.py', 'scripts/stop_sma.py', 'scripts/plot_sma.py',
-             'scripts/dbetcp.py'],
+             'scripts/dbetcp.py', 'scripts/schedule.py'],
     )
