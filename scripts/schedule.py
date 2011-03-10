@@ -22,10 +22,11 @@ def wait_until(dt):
 
 
 ZERO = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-N = [False, True, True, True, True, True, False, True, True, False, False]
+N = [False, True, True, True, False, True, True, False, True, False, False]
 
 
 def scan( scan_number,
+          source,
           start_datetime,
           duration,
           phased_array_antennas, 
@@ -40,11 +41,12 @@ def scan( scan_number,
         comparison_antenna
         )
     print "SCAN NO %d ---> %s" %(scan_number, config_str)
+    print "SOURCE:", source
     print "STARTS:", start_datetime
     print
 
-    GAINS = dict((i, 0.) for  i in range(1, 6))
-    GAIN_FACTOR = 1./sqrt(len(phased_array_antennas))
+    GAINS = dict((i, 0.) for  i in range(1, 9))
+    GAIN_FACTOR = 2./sqrt(2*len(phased_array_antennas))
     GAINS.update(dict((i, GAIN_FACTOR) for i in phased_array_antennas))
     rpa.set_gains(GAINS)
     print "SETUP DONE!"
@@ -93,6 +95,7 @@ if __name__ == "__main__":
     try:
         dds.ddsSetOffsets(OFF)
         dds.ddsSetWalshers(N)
+        dds.ddsSetRotators(N)
     except RuntimeError:
         print "DDS NOT AVAILABLE!"
 
@@ -100,7 +103,7 @@ if __name__ == "__main__":
 
     for n in range(START_AT-1,len(SCANS)):
         try:
-            scan(n+1, SCANS[n]['datetime'], SCANS[n]['duration'], \
+            scan(n+1, SCANS[n]['source'], SCANS[n]['datetime'], SCANS[n]['duration'], \
                  SCANS[n]['pants'], SCANS[n]['comp'], SCANS[n]['conf'])
         except KeyboardInterrupt:
             print "SCHEDULE INTERRUPTED"
