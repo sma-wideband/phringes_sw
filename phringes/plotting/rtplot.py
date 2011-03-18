@@ -59,7 +59,10 @@ class RealTimePlot(FigureCanvasTkAgg):
         for i in range(len(self.lines)):
             line = self.lines[i]
             xdata = line.get_xdata()
-            xmax = max(xmax, max(xdata))
+            try:
+                xmax = max(xmax, max(xdata))
+            except TypeError:
+                xmax = max(xdata)
             ydata = line.get_ydata()
             ysum = ysum + sum(ydata)
             ynum = ynum + len(ydata)
