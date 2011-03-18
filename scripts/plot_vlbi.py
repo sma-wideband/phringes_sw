@@ -2,6 +2,53 @@
 
 
 import logging
+from optparse import OptionParser
+
+parser = OptionParser()
+parser.add_option("-q", "--quiet", action="store_false",
+                  dest="verbose", default=True,
+                  help="only print ERROR messages or higher to stdout")
+parser.add_option("-v", "--debug", action="store_true",
+                  dest="debug", default=False,
+                  help="print DEBUG messages to stdout")
+parser.add_option("--block", action="store",
+                  dest="block", default="high",
+                  help="start the correlator on BLOCK, can be 'high' or 'low' "
+                  "(default 'high')",
+                  metavar="BLOCK")
+(options, args) = parser.parse_args()
+
+formatter = logging.Formatter('%(name)-32s: %(asctime)s : %(levelname)-8s %(message)s')
+
+if not options.verbose:
+    LEVEL = logging.ERROR
+elif options.debug:
+    LEVEL = logging.DEBUG
+else:
+    LEVEL = logging.INFO
+console = logging.StreamHandler()
+console.setLevel(LEVEL)
+console.setFormatter(formatter)
+
+logger = logging.getLogger('')
+logger.setLevel(LEVEL)
+logger.addHandler(console)
+
+
+if options.block=='high':
+    server_host = '0.0.0.0'
+    server_port = 59999
+    listen_host = '0.0.0.0'
+    listen_port = 8333
+elif options.block=='low':
+    server_host = '0.0.0.0'
+    server_port = 59998
+    listen_host = '0.0.0.0'
+    listen_port = 8332
+else:
+    raise ValueError, "Block option must be either 'high' or 'low'!"
+
+
 from math import pi
 from time import time
 from struct import Struct
@@ -33,7 +80,7 @@ logger.handlers[0].setFormatter(formatter)
 
 root = Tk()
 root.iconify()
-root.wm_title("Correlator Monitor")
+root.wm_title("Correlator Monitor: %s Block" % options.block.capitalize())
 
 window = Frame(root)
 window.pack(side=RIGHT, fill=BOTH, expand=1)
@@ -47,9 +94,9 @@ buttons.pack(side=TOP, fill=BOTH, expand=1)
 mandc = LabelFrame(window, text='Monitor and Control')
 mandc.pack(side=BOTTOM, fill=BOTH, expand=1)
 
-server = sma.SubmillimeterArrayClient('0.0.0.0', 59998)
+server = sma.SubmillimeterArrayClient(server_host, server_port)
 try:
-    server.subscribe('0.0.0.0', 8332) # the server's local UDP client
+    server.subscribe(listen_host, listen_port) # the server's local UDP client
 except:
     pass
 server.start_correlator()
@@ -73,7 +120,7 @@ maghist.tkwidget.grid(row=1, column=1)#, fill=BOTH, expand=1)
 
 
 def quit_mon():
-    server.unsubscribe('0.0.0.0', 8332)
+    server.unsubscribe(listen_host, listen_port)
     server.stop_correlator()
     root.quit()
 
@@ -142,7 +189,7 @@ def update_plots(widget, baselines, statusbar):
             linewidth=1, label=None
             )[0]
         hist.figure.autofmt_xdate()
-        #maghist.figure.autofmt_xdate()
+        maghist.figure.autofmt_xdate()
         baselines[baseline] = lags_line, phase_line, fit_line, phist_line, mag_line
         status = StringVar()
         statusbar[baseline] = status
