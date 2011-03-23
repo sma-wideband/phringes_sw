@@ -435,10 +435,12 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   15 : self._board,
                                   36 : self.get_delays,
                                   37 : self.set_delays,
-                                  38 : self.get_gains,
-                                  39 : self.set_gains,
-                                  40 : self.get_thresholds,
-                                  41 : self.set_thresholds,
+                                  38 : self.get_phases,
+                                  39 : self.set_phases,
+                                  40 : self.get_gains,
+                                  41 : self.set_gains,
+                                  42 : self.get_thresholds,
+                                  43 : self.set_thresholds,
                                   64 : self.get_dbe_gains,
                                   65 : self.set_dbe_gains,
                                   128 : self.get_correlation})
@@ -557,7 +559,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     @debug
     def run_fringe_stopper(self, phases):
         for a in self._antennas:
-            self.set_value('_phase_offsets', a, delays[a])
+            self.set_value('_phases', a, delays[a])
 
     @debug
     def _checks_loop(self):
@@ -705,7 +707,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             return regvalue * deg_per_step
         elif mode=='set':
             total = value + self._phase_offsets[antenna]
-            regvalue = round(value/deg_per_step)
+            regvalue = round(total/deg_per_step)
             ibob.regwrite(regname, int(regvalue))
             return self._phase_handler('get', antenna, ibob, ibob_input)
 
@@ -756,6 +758,20 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         If you're looking to just add a delay offset use set_delay_offsets instead
         and wait for the delay loop to iterate."""
         return self.set_values('delays', args, type='f')
+
+    @info
+    def get_phases(self, args):
+        """ inst.get_phases(ant=[1,2,3,4,...]) -> values=[100.0, 100.0, 100.0,...]
+        Get the current delays (with delay offsets included). """
+        return self.get_values('phases', args, type='f')
+
+    @info
+    def set_phases(self, args):
+        """ inst.set_phases(ant_val=[1,1.0,2,1.0,3,1.0,...]) -> values=[0,1,2,...]
+        Set the phases, this may be overriden by the delay tracking loop.
+        If you're looking to just add a phase offset use set_phase_offsets instead
+        and wait for the delay loop to iterate."""
+        return self.set_values('phases', args, type='f')
 
     @info
     def get_mapping(self, args):
@@ -924,20 +940,28 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         return self._set_values(37, delays_dict, 'f', FLOAT_SIZE)
 
     @debug
-    def get_gains(self, *antennas):
+    def get_phases(self, *antennas):
         return self._get_values(38, 'f', FLOAT_SIZE, *antennas)
 
     @debug
+    def set_phases(self, delays_dict):
+        return self._set_values(39, delays_dict, 'f', FLOAT_SIZE)
+
+    @debug
+    def get_gains(self, *antennas):
+        return self._get_values(40, 'f', FLOAT_SIZE, *antennas)
+
+    @debug
     def set_gains(self, gains_dict):
-        return self._set_values(39, gains_dict, 'f', FLOAT_SIZE)
+        return self._set_values(41, gains_dict, 'f', FLOAT_SIZE)
 
     @debug
     def get_thresholds(self, *antennas):
-        return self._get_values(40, 'B', BYTE_SIZE, *antennas)
+        return self._get_values(42, 'B', BYTE_SIZE, *antennas)
 
     @debug
     def set_thresholds(self, thresh_dict):
-        return self._set_values(41, thresh_dict, 'B', BYTE_SIZE)
+        return self._set_values(43, thresh_dict, 'B', BYTE_SIZE)
 
     @debug
     def get_dbe_gains(self):
