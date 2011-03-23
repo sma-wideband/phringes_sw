@@ -420,8 +420,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 2: [self._ipa0, 2], 3: [self._ipa0, 3],
                                 4: [self._ipa1, 0], 5: [self._ipa1, 1],
                                 6: [self._ipa1, 2], 7: [self._ipa1, 3]}
-        self._param_handlers = {'_phase_offsets': self._phase_handler,
-                                '_thresholds' : self._thresh_handler,
+        self._param_handlers = {'_thresholds' : self._thresh_handler,
+                                '_phases': self._phase_handler,
                                 '_delays': self._delay_handler,
                                 '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
@@ -704,6 +704,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             regvalue = ibob.regread(regname)
             return regvalue * deg_per_step
         elif mode=='set':
+            total = value + self._phase_offsets[antenna]
             regvalue = round(value/deg_per_step)
             ibob.regwrite(regname, int(regvalue))
             return self._phase_handler('get', antenna, ibob, ibob_input)
