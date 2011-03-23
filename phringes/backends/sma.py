@@ -77,14 +77,14 @@ class DDSClient:
             phases = [0.]*11
         #return _dds.sendphases(self.host, phases)
         obj = self.dds_clnt.ddsPAPUpdate(phases)
-        return {'a': obj.a,
-                'b': obj.b,
-                'c': obj.c,
-                'antennaExists': obj.antennaExists,
-                'rA': obj.rA,
-                'refLat': obj.refLat,
-                'refLong': obj.refLong,
-                'refRad': obj.refRad}
+        self.query = {'a': obj.a,
+                      'b': obj.b,
+                      'c': obj.c,
+                      'antennaExists': obj.antennaExists,
+                      'rA': obj.rA,
+                      'refLat': obj.refLat,
+                      'refLong': obj.refLong,
+                      'refRad': obj.refRad}
 
     @debug
     def get_local_sidereal_time(self, at_time, longitude):
@@ -143,7 +143,7 @@ class DDSClient:
     @debug
     def get_delays(self, at_time, offset=4000., given_phases=None):
         delays = {}
-        query = self.query_dds(given_phases)
+        query = self.query.copy()
         H = self.get_hour_angle(query['rA'], query['refLong'], at_time)
         for ant in range(len(query['antennaExists'])):
             partial = self.get_delay(H, query['a'][ant], query['b'][ant], query['c'][ant])
@@ -571,13 +571,17 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     @debug
     def _delay_tracker(self):
+        count = 0
         logger = logging.getLogger("DelayTracker")
         while not self._delay_tracker_stopevent.isSet():
+            count += 1
             start = time()
             try:
                 with RLock():
                     fstop = self._fstop
                     period = self._delay_tracker_period
+                    if count%20 == 0:
+                        self._dds.query_dds(None)
                     delays = self._dds.get_delays(start+period)
                 phases = dict((a, sign(fstop)*(360*d*abs(fstop) % 360)) for a, d in delays.iteritems())
             except:
@@ -645,7 +649,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                 self.logger.warning("delay tracker has not been started!")
                 return SBYTE.pack(-2)
             else:
-                self.start_delay_tracker(4)
+                self.start_delay_tracker(1)
                 self.logger.info("delay tracker started")
         return SBYTE.pack(0)
 
