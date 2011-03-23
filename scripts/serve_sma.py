@@ -82,19 +82,27 @@ bee2_bitstream = 'bee2_complex_corr.bof'
 include_baselines = "{0}-*".format(options.reference)
 if options.block=="high":
     bee2_port = 7150
+    correlator_client_port = 8333
     ipa_hosts = ('ipahi0', 'ipahi1')
+    phase_tracker_port = 9454
     dbe_host = 'dbehi'
+    fstop = 0.256
 elif options.block=='low':
     bee2_port = 7147
+    correlator_client_port = 8332
     ipa_hosts = ('ipalo0', 'ipalo1')
+    phase_tracker_port = 9453
     dbe_host = 'dbelo'
+    fstop = -0.256
 
 HOST, PORT = options.host, options.port
-server = SubmillimeterArrayTCPServer((HOST, PORT), reference=options.reference,
+server = SubmillimeterArrayTCPServer((HOST, PORT), reference=options.reference, fstop=fstop,
                                      include_baselines=include_baselines, initial_int_time=1, 
                                      bee2_host=bee2_host, bee2_port=bee2_port,
                                      correlator_bitstream=bee2_bitstream, ipa_hosts=ipa_hosts,
-                                     dbe_host=dbe_host, dds_host=options.dds_host)
+                                     dbe_host=dbe_host, dds_host=options.dds_host,
+                                     correlator_client_port=correlator_client_port,
+                                     phase_tracker_port=phase_tracker_port)
 ip, port = server.server_address
 
 logger.info('starting server on port %d'%port)
