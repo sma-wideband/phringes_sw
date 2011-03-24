@@ -1038,4 +1038,4 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         size, err, resp = self._request(BYTE.pack(15) + cmdstr)
         if err:
             self.logger.warning("error using _ibob_tinysh!")
-        print resp
+        return resp

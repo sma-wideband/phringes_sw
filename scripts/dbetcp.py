@@ -23,6 +23,9 @@ else:
 sma = SubmillimeterArrayClient(host, port)
 
 
+def arm_1pps(option, opt, value, parser):
+    print sma._board('dbe', 'arm1pps')
+    
 def read_gains(option, opt, value, parser):
     for chan_gain in enumerate(sma.get_dbe_gains()):
         print 'Channel %2d gain = %d' % chan_gain
@@ -41,6 +44,8 @@ def set_gains_file(option, opt, value, parser):
 
 
 parser = OptionParser()
+parser.add_option("-a", "--arm", action="callback",
+                  callback=arm_1pps, help="arm the DBE internal 1PPS.")
 parser.add_option("-r", "--read-gains", action="callback",
                   callback=read_gains, help="read DBE channels gains.")
 parser.add_option("-g", "--set-all-gains", action="callback",

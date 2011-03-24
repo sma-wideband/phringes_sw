@@ -115,7 +115,7 @@ if __name__ == "__main__":
     for n in range(START_AT-1,len(SCANS)):
         try:
             scan(n+1, SCANS[n]['source'], SCANS[n]['datetime'], SCANS[n]['duration'], \
-                 SCANS[n]['pants'], SCANS[n]['comp'], SCANS[n]['conf'])
+                 SCANS[n]['pants'], int(SCANS[n]['comp']), SCANS[n]['conf'])
         except KeyboardInterrupt:
             print "SCHEDULE INTERRUPTED"
             break
