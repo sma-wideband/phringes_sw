@@ -22,7 +22,7 @@ def wait_until(dt):
         pass
 
 
-REFERENCE = 7
+REFERENCE = rpalo.get_reference()
 ARB_FRINGE_RATE = 117 # Hz
 ZERO = list(0 for i in range(11))
 ALL_TRUE = list(True for i in range(11))
@@ -102,6 +102,7 @@ if __name__ == "__main__":
     print "###############################################"
     print "STARTING SCHEDULE AT SCAN %d" %START_AT
     print "TOTAL SCANS", len(SCANS)
+    print "REFERENCE", REFERENCE
     START = SCANS[0]['datetime']
     STOP = SCANS[-1]['datetime'] + SCANS[-1]['duration']
     TOTAL = STOP - START

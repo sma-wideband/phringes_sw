@@ -433,6 +433,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   13 : self.arm_sync,
                                   14 : self.noise_mode,
                                   15 : self._board,
+                                  16 : self.get_reference,
                                   36 : self.get_delays,
                                   37 : self.set_delays,
                                   38 : self.get_phases,
@@ -883,6 +884,12 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             response += "\r### {0} {1} @({2})\n\r".format(name, cmd, asctime()) 
         return SBYTE.pack(0) + response
 
+    @debug
+    def get_reference(self, args):
+        """ inst.get_reference() -> err_code
+        Returns the current reference antenna. """
+        return pack('!bB', 0, self._reference_antenna)
+
     def get_integration_time(self, args):
         """ inst.get_integration_time() -> err_code
         Overloaded method to get integration time on the BEE2."""
@@ -1039,3 +1046,9 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         if err:
             self.logger.warning("error using _ibob_tinysh!")
         return resp
+
+    @debug
+    def get_reference(self):
+        cmd = BYTE.pack(16)
+        size, err, resp = self._request(cmd)
+        return BYTE.unpack(resp)[0]
