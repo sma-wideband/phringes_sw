@@ -12,7 +12,8 @@ from phringes.backends.sma import (
 from phringes.backends.dDS_clnt import DDSClient
 
 
-rpa = SubmillimeterArrayClient('0.0.0.0', 59998)
+rpalo = SubmillimeterArrayClient('0.0.0.0', 59998)
+rpahi = SubmillimeterArrayClient('0.0.0.0', 59999)
 dds = DDSClient('128.171.116.189')
 
 
@@ -21,8 +22,10 @@ def wait_until(dt):
         pass
 
 
-ZERO = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-N = [False, True, True, True, False, True, True, False, True, False, False]
+REFERENCE = 7
+ARB_FRINGE_RATE = 117 # Hz
+ZERO = list(0 for i in range(11))
+ALL_TRUE = list(True for i in range(11))
 
 
 def scan( scan_number,
@@ -45,10 +48,27 @@ def scan( scan_number,
     print "STARTS:", start_datetime
     print
 
+    OFFSETS = copy(ZERO)
+    OFFSETS[comparison_antenna] = ARB_FRINGE_RATE
+    WALSHED = copy(ALL_TRUE)
+    WALSHED[REFERENCE] = False
+    WALSHED[comparison_antenna] = False
+    STOPPED = copy(ALL_TRUE)
+    STOPPED[REFERENCE] = False
+    STOPPED[comparison_antenna] = False
+    try:
+        dds.ddsSetOffsets(OFFSETS)
+        dds.ddsSetWalshers(WALSHED)
+        dds.ddsSetRotators(STOPPED)
+    except RuntimeError:
+        print "DDS NOT AVAILABLE!"
+
+
     GAINS = dict((i, 0.) for  i in range(1, 9))
     GAIN_FACTOR = 2./sqrt(2*len(phased_array_antennas))
     GAINS.update(dict((i, GAIN_FACTOR) for i in phased_array_antennas))
-    rpa.set_gains(GAINS)
+    rpalo.set_gains(GAINS)
+    rpahi.set_gains(GAINS)
     print "SETUP DONE!"
     print
 
@@ -89,15 +109,6 @@ if __name__ == "__main__":
     print "ENDS AT", STOP
     print "TOTAL TIME %.2f minutes" %(TOTAL.seconds/60.)
     print
-
-    OFF = list(ZERO)
-    OFF[4] = 117
-    try:
-        dds.ddsSetOffsets(OFF)
-        dds.ddsSetWalshers(N)
-        dds.ddsSetRotators(N)
-    except RuntimeError:
-        print "DDS NOT AVAILABLE!"
 
     #exit()
 
