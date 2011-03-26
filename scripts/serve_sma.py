@@ -79,14 +79,14 @@ elif options.logfile:
 
 bee2_host = 'bee2'
 bee2_bitstream = 'bee2_complex_corr.bof'
-include_baselines = "{0}-*".format(options.reference)
+include_baselines = "{0}-{0},{0}-*".format(options.reference)
 if options.block=="high":
     bee2_port = 7150
     correlator_client_port = 8333
     ipa_hosts = ('ipahi0', 'ipahi1')
     phase_tracker_port = 9454
     dbe_host = 'dbehi'
-    fstop = 0.256
+    fstop = -0.256
 elif options.block=='low':
     bee2_port = 7147
     correlator_client_port = 8332
