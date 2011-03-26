@@ -315,6 +315,9 @@ class PhaseTracker(BEE2CorrelatorClient):
     def __init__(self, server, host, port, size=16, maxlen=10):
         BEE2CorrelatorClient.__init__(self, host, port, size)
         self.server = server # needed to adjust delay/phase offsets
+        self._bee2 = BEE2Client(server.bee2_host, port=server.bee2_port)
+        while not self._bee2.is_connected():
+            sleep(0.1)
         self.rms_thresh = pi/8 # radian
         self.maxlen = maxlen
         self.delgran = 1./16
@@ -323,7 +326,7 @@ class PhaseTracker(BEE2CorrelatorClient):
         self.phases = {}
         with RLock(): # do all server stuff here
             mapping = self.server._mapping.copy()
-            refinp = self.server._bee2.regread('refant')
+            refinp = self._bee2.regread('refant')
         rev_mapping = dict((v, k) for k, v in mapping.iteritems())
         self.refant = rev_mapping[refinp]
 
@@ -361,7 +364,7 @@ class PhaseTracker(BEE2CorrelatorClient):
         #    self.logger.info('corrected to {0:.4f} ns the delay of antenna {1}'.format(updated_delay, other))
         phase_correction = self._get_correction(phase_hist) # in degrees
         with RLock():
-            itime = self.server._bee2.regread('integ_time')
+            itime = self._bee2.regread('integ_time')
         if self.corrections[other] is not None and \
                corr_time - self.corrections[other] < 3 * itime:
             return None # too soon to adjust phase again
@@ -560,7 +563,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     @debug
     def run_fringe_stopper(self, phases):
         for a in self._antennas:
-            self.set_value('_phases', a, delays[a])
+            self.set_value('_phases', a, phases[a])
 
     @debug
     def _checks_loop(self):
@@ -575,27 +578,28 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         count = 0
         logger = logging.getLogger("DelayTracker")
         while not self._delay_tracker_stopevent.isSet():
-            count += 1
             start = time()
-            try:
-                with RLock():
-                    fstop = self._fstop
-                    period = self._delay_tracker_period
-                    if count%20 == 0:
-                        self._dds.query_dds(None)
-                    delays = self._dds.get_delays(start+period)
-                phases = dict((a, sign(fstop)*(360*d*abs(fstop) % 360)) for a, d in delays.iteritems())
-            except:
-                logger.error("Problem communicating with the DDS! Waiting for %d second ... " % period)
-                self._delay_tracker_stopevent.wait(period)
-                continue
+            if count%20 == 0:
+                try:
+                    self._dds.query_dds(None)
+                except:
+                    logger.error("Problem communicating with the DDS! Waiting for %d second ... " % period)
+                    self._delay_tracker_stopevent.wait(period)
+                    continue
+            count += 1
+            with RLock():
+                fstop = self._fstop
+                period = self._delay_tracker_period
+                delays = self._dds.get_delays(start+period)
+            phases = dict((a, sign(fstop)*(360*d*abs(fstop) % 360)) for a, d in delays.iteritems())
             while time() < start+period:
                 self._delay_tracker_stopevent.wait(period/10.)
             with RLock():
                 self.run_delay_tracker(delays)
                 self.run_fringe_stopper(phases)
-            logger.info('|'.join('%d:%.2f'%(a, 4000-d) for a, d in delays.iteritems() if a in self._antennas))
-
+            #logger.info('|'.join('%d:%.2f'%(a, 4000-d) for a, d in delays.iteritems() if a in self._antennas))
+            logger.info('|'.join('%d:%.2f'%(a, p) for a, p in phases.iteritems() if a in self._antennas))
+            
     @debug
     def start_checks_loop(self, period):
         self.logger.info('starting check loop at %s (period %.2f)' % (asctime(), period))
