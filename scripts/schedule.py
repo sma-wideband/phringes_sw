@@ -22,8 +22,9 @@ def wait_until(dt):
         pass
 
 
-REFERENCE = rpalo.get_reference()
+ALL = [6, 1, 3, 4, 5, 7, 8, 10]
 ARB_FRINGE_RATE = 117 # Hz
+REFERENCE = rpalo.get_reference()
 ZERO = list(0 for i in range(11))
 ALL_TRUE = list(True for i in range(11))
 
@@ -65,8 +66,12 @@ def scan( scan_number,
 
 
     GAINS = dict((i, 0.) for  i in range(1, 9))
-    GAIN_FACTOR = 2./sqrt(2*len(phased_array_antennas))
-    GAINS.update(dict((i, GAIN_FACTOR) for i in phased_array_antennas))
+    if phased_array_antennas == [0,]:
+        GAIN_FACTOR = 2./sqrt(2*len(ALL))
+        GAINS.update(dict((i, GAIN_FACTOR) for i in ALL))
+    else:
+        GAIN_FACTOR = 2./sqrt(2*len(phased_array_antennas))
+        GAINS.update(dict((i, GAIN_FACTOR) for i in phased_array_antennas))
     rpalo.set_gains(GAINS)
     rpahi.set_gains(GAINS)
     print "SETUP DONE!"
