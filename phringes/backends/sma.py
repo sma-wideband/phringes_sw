@@ -29,8 +29,9 @@ from numpy.random import randint
 from numpy.fft import fft, fftshift
 from numpy import array as narray
 from numpy import (
-    array, zeros, arange, angle,
+    array, zeros, arange, angle, 
     concatenate, ceil, loads, sign,
+    unwrap,
     )
 
 from phringes.backends import _dds
@@ -354,7 +355,7 @@ class PhaseTracker(BEE2CorrelatorClient):
             self.phases[other].append(phase)
         if len(self.phases[other]) < self.maxlen:
             return None # phase history isn't full, get out!
-        phase_hist = array(self.phases[other])
+        phase_hist = unwrap(array(self.phases[other]))
         if self._is_bad(phase_hist):
             return None # baseline is too noisy, next!
         #if abs(delay) >= self.delgran:
