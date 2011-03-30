@@ -381,8 +381,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     def __init__(self, address, handler=BasicRequestHandler,
                  correlator=BEE2CorrelationProvider, reference=6,
-                 fstop=0.256, antennas=range(1, 9), correlator_lags=16, 
-                 include_baselines='*-*', initial_int_time=16, 
+                 fstop=0.256, antennas=[6, 1, 2, 3, 4, 5, 7, 8],
+                 correlator_lags=16, include_baselines='*-*', initial_int_time=16, 
                  analog_bandwidth=512000000.0, antenna_diameter=3,
                  bee2_host='b02.ata.pvt', bee2_port=7147,
                  correlator_bitstream='bee2_calib_corr.bof',
@@ -418,7 +418,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._ipas = {'ipa0': self._ipa0, 'ipa1': self._ipa1}
         self._ibobs = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe}
         self._boards = {'ipa0': self._ipa0, 'ipa1': self._ipa1, 'dbe': self._dbe, 'bee2': self._bee2}
-        self._mapping = {6:0, 1:1, 2:2, 3:3, 4:4, 5:5, 7:6, 8:7}
+        self._mapping = dict((a, i) for i, a in enumerate(self._antennas))#{6:0, 1:1, 2:2, 3:3, 4:4, 5:5, 7:6, 8:7}
         self._input_ibob_map = {0: [self._ipa0, 0], 1: [self._ipa0, 1],
                                 2: [self._ipa0, 2], 3: [self._ipa0, 3],
                                 4: [self._ipa1, 0], 5: [self._ipa1, 1],
@@ -583,22 +583,22 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                 try:
                     self._dds.query_dds(None)
                 except:
-                    logger.error("Problem communicating with the DDS! Waiting for %d second ... " % period)
+                    logger.error("Problem communicating with the DDS!")
                     self._delay_tracker_stopevent.wait(period)
                     continue
-            count += 1
             with RLock():
                 fstop = self._fstop
                 period = self._delay_tracker_period
                 delays = self._dds.get_delays(start+period)
             phases = dict((a, sign(fstop)*(360*d*abs(fstop) % 360)) for a, d in delays.iteritems())
+            count += 1
             while time() < start+period:
                 self._delay_tracker_stopevent.wait(period/10.)
             with RLock():
                 self.run_delay_tracker(delays)
                 self.run_fringe_stopper(phases)
-            #logger.info('|'.join('%d:%.2f'%(a, 4000-d) for a, d in delays.iteritems() if a in self._antennas))
-            logger.info('|'.join('%d:%.2f'%(a, p) for a, p in phases.iteritems() if a in self._antennas))
+            logger.info('|'.join('%d:%.2f'%(a, 4000-d) for a, d in delays.iteritems() if a in self._antennas))
+            #logger.info('|'.join('%d:%.2f'%(a, p) for a, p in phases.iteritems() if a in self._antennas))
             
     @debug
     def start_checks_loop(self, period):
