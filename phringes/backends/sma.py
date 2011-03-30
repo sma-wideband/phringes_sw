@@ -69,6 +69,10 @@ class DDSClient:
         self.dds_clnt = dDS_clnt.DDSClient(dds_host)
 
     @debug
+    def reconnect(self):
+        self.dds_clnt = dDS_clnt.DDSClient(self.host)
+
+    @debug
     def get_walsh_pattern(self):
         return _dds.getwalshpattern(self.host)
 
@@ -582,10 +586,11 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             start = time()
             if count%20 == 0:
                 try:
+                    self._dds.reconnect()
                     self._dds.query_dds(None)
                 except:
                     logger.error("Problem communicating with the DDS!")
-                    self._delay_tracker_stopevent.wait(period)
+                    self._delay_tracker_stopevent.wait(20)
                     continue
             with RLock():
                 fstop = self._fstop
