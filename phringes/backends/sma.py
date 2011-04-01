@@ -17,6 +17,8 @@ running on the DDS.
 
 import re
 import logging
+from getpass import getuser
+from socket import gethostname
 from collections import deque
 from math import pi, cos, sin
 from struct import Struct, pack, unpack
@@ -452,6 +454,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   43 : self.set_thresholds,
                                   64 : self.get_dbe_gains,
                                   65 : self.set_dbe_gains,
+                                  96 : self.operations_log,
                                   128 : self.get_correlation})
         self.setup()
         #self.sync_all()
@@ -918,6 +921,17 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._integration_time = integ_time
         return SBYTE.pack(0)
 
+    @debug
+    def operations_log(self, args):
+        """ inst.operations_log(level, logger_name, msg)
+        This allows any client to send log messages to the
+        given logger at any level. """
+        level, logger_msg = unpack('!B%ds' %(len(args)-1), args)
+        logger_name, msg = logger_msg.split('\r')
+        logger = logging.getLogger(logger_name)
+        logger.log(level, msg)
+        return SBYTE.pack(0)
+
 
 class SubmillimeterArrayClient(BasicInterfaceClient):
 
@@ -1062,3 +1076,40 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         cmd = BYTE.pack(16)
         size, err, resp = self._request(cmd)
         return BYTE.unpack(resp)[0]
+
+    @debug
+    def operations_log(self, level, logger, msg):
+        argstr = '{0}\r{1}'.format(logger, msg)
+        cmdstr = pack('!B%ds' %len(argstr), level, argstr)
+        size, err, resp = self._request(BYTE.pack(96) + cmdstr)
+        if err:
+            elf.logger.warning("error sending operations log!")
+            return 
+        self.logger.log(level, "sent server logger {1}: {0} {2}".format(
+            level, logger, msg
+            ))
+
+    @debug
+    def log_schedule(self, sched, msg, level=logging.INFO):
+        self.operations_log(level, 'Schedule(%s)' % sched, msg)
+
+    @debug
+    def log_user(self, level, msg):
+        user = '{0}@{1}'.format(getuser(), gethostname())
+        self.operations_log(level, 'User(%s)' % user, msg)
+
+    @debug
+    def log_debug(self, msg):
+        self.log_user(logging.DEBUG, msg)
+
+    @debug
+    def log_info(self, msg):
+        self.log_user(logging.INFO, msg)
+
+    @debug
+    def log_warning(self, msg):
+        self.log_user(logging.WARNING, msg)
+
+    @debug
+    def log_error(self, msg):
+        self.log_user(logging.ERROR, msg)
