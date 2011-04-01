@@ -461,7 +461,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
 
     def shutdown(self, args):
         self.stop_checks_loop()
-        #self.stop_delay_tracker()
+        self.stop_delay_tracker()
         self.stop_phase_tracker()
         return BasicTCPServer.shutdown(self, args)
 
