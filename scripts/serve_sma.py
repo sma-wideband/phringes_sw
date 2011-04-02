@@ -79,7 +79,8 @@ elif options.logfile:
 
 bee2_host = 'bee2'
 bee2_bitstream = 'bee2_complex_corr.bof'
-include_baselines = "{0}-{0},{0}-*".format(options.reference)
+include_baselines = "{0}-*".format(options.reference)
+antennas = [6, 1, 2, 3, 4, 5, 9, 8]
 if options.block=="high":
     bee2_port = 7150
     correlator_client_port = 8333
@@ -98,7 +99,7 @@ elif options.block=='low':
 HOST, PORT = options.host, options.port
 server = SubmillimeterArrayTCPServer((HOST, PORT), reference=options.reference, fstop=fstop,
                                      include_baselines=include_baselines, initial_int_time=1, 
-                                     bee2_host=bee2_host, bee2_port=bee2_port,
+                                     bee2_host=bee2_host, bee2_port=bee2_port, antennas=antennas,
                                      correlator_bitstream=bee2_bitstream, ipa_hosts=ipa_hosts,
                                      dbe_host=dbe_host, dds_host=options.dds_host,
                                      correlator_client_port=correlator_client_port,

@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
 
+import logging
 from time import *
 from datetime import *
 from numpy import sqrt
+from sys import stdout
 from copy import copy
 
 from phringes.backends.sma import (
@@ -12,17 +14,34 @@ from phringes.backends.sma import (
 from phringes.backends.dDS_clnt import DDSClient
 
 
+h = logging.NullHandler()
+logging.getLogger().addHandler(h)
+
+
 rpalo = SubmillimeterArrayClient('0.0.0.0', 59998)
 rpahi = SubmillimeterArrayClient('0.0.0.0', 59999)
 dds = DDSClient('128.171.116.189')
 
 
-def wait_until(dt):
+def status_bar(start, stop, current, length=20, time_fmt='%H:%M:%S'):
+    total = (stop - start).total_seconds()
+    done = (current - start).total_seconds()
+    bars = int((done / total) * length)
+    bar_format = '{{0:{0}}}{{1:<{1}}}{{2:{0}}}'.format(time_fmt, length)
+    return bar_format.format(start, '='*(bars-1) + '>', stop)
+
+
+def wait_until(dt, refresh=0.1):
+    start = datetime.now()
     while datetime.now() < dt:
-        pass
+        now = datetime.now()
+        if (dt-now).microseconds%1000 == 0:
+            stdout.write('\r%s' % status_bar(start, dt, now))
+            stdout.flush()
 
 
-ALL = [6, 1, 3, 4, 5, 7, 8, 10]
+ALL_GAINS = {6: 0.5, 1: 0.5, 2: 0.5, 3: 0.5,
+             4: 0.5, 5: 0.5, 9: 0., 8: 0.5}
 ARB_FRINGE_RATE = 117 # Hz
 REFERENCE = rpalo.get_reference()
 ZERO = list(0 for i in range(11))
@@ -30,6 +49,7 @@ ALL_TRUE = list(True for i in range(11))
 
 
 def scan( scan_number,
+          scan_spec,
           source,
           start_datetime,
           duration,
@@ -44,7 +64,7 @@ def scan( scan_number,
         ''.join(str(a) for a in phased_array_antennas),
         comparison_antenna
         )
-    print "SCAN NO %d ---> %s" %(scan_number, config_str)
+    print "%d. SCAN %s ---> %s" %(scan_number, scan_spec, config_str)
     print "SOURCE:", source
     print "STARTS:", start_datetime
     print
@@ -65,15 +85,14 @@ def scan( scan_number,
         print "DDS NOT AVAILABLE!"
 
 
-    GAINS = dict((i, 0.) for  i in range(1, 9))
     if phased_array_antennas == [0,]:
-        GAIN_FACTOR = 2./sqrt(2*len(ALL))
-        GAINS.update(dict((i, GAIN_FACTOR) for i in ALL))
+        GAINS = ALL_GAINS.copy()
     else:
+        GAINS = dict((i, 0.) for  i in range(1, 9))
         GAIN_FACTOR = 2./sqrt(2*len(phased_array_antennas))
         GAINS.update(dict((i, GAIN_FACTOR) for i in phased_array_antennas))
-    rpalo.set_gains(GAINS)
-    rpahi.set_gains(GAINS)
+    #rpalo.set_gains(GAINS)
+    #rpahi.set_gains(GAINS)
     print "SETUP DONE!"
     print
 
@@ -116,14 +135,22 @@ if __name__ == "__main__":
     print "TOTAL TIME %.2f minutes" %(TOTAL.seconds/60.)
     print
 
-    #exit()
+    if START_AT == 1:
+        rpalo.load_walsh_table()
+        print rpalo._board('ipa.', 'armsowf')
+        rpahi.load_walsh_table()
+        print rpalo._board('ipa.', 'armsowf')
 
     for n in range(START_AT-1,len(SCANS)):
+        if SCANS[n]['datetime'] < datetime.now():
+            print "SKIPPING %d" % n
+            continue
         try:
-            scan(n+1, SCANS[n]['source'], SCANS[n]['datetime'], SCANS[n]['duration'], \
-                 SCANS[n]['pants'], int(SCANS[n]['comp']), SCANS[n]['conf'])
+            scan(n+1, SCANS[n]['scan_spec'], SCANS[n]['source'], SCANS[n]['datetime'],
+                 SCANS[n]['duration'], SCANS[n]['pants'], int(SCANS[n]['comp']),
+                 SCANS[n]['conf'])
         except KeyboardInterrupt:
-            print "SCHEDULE INTERRUPTED"
+            print "\nSCHEDULE INTERRUPTED"
             break
 
     print "SCHEDULE ENDED AT", asctime(gmtime())
