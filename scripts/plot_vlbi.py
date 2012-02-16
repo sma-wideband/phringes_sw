@@ -47,10 +47,10 @@ else:
     listen_host = gethostbyname_ex(gethostname())[2][0]
 if options.block=='high':
     server_port = 59999
-    listen_port = 8333
+    listen_port = 8335
 elif options.block=='low':
     server_port = 59998
-    listen_port = 8332
+    listen_port = 8334
 else:
     raise ValueError, "Block option must be either 'high' or 'low'!"
 
@@ -136,7 +136,7 @@ corr.tkwidget.grid(row=0, column=1, sticky=(N, S, E, W))
 hist = RealTimePlot(master=plots, xspan=timedelta(minutes=10), xpoints=40, ylim=phase_limits)
 hist.tkwidget.grid(row=1, column=0, sticky=(N, S, E, W))
 
-maghist = RealTimePlot(master=plots, xspan=timedelta(minutes=10), xpoints=40, ylim=[0, 160])
+maghist = RealTimePlot(master=plots, xspan=timedelta(minutes=10), xpoints=40, ylim=[30, 70])
 maghist.tkwidget.grid(row=1, column=1, sticky=(N, S, E, W))
 
 plots.columnconfigure(0, weight=1)
