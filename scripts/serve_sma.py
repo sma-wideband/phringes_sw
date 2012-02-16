@@ -80,7 +80,7 @@ elif options.logfile:
 bee2_host = 'bee2'
 bee2_bitstream = 'bee2_complex_corr.bof'
 include_baselines = "{0}-*".format(options.reference)
-antennas = [6, 1, 2, 3, 4, 5, 9, 8]
+antennas = [6, 1, 2, 3, 4, 5, 7, 8]
 if options.block=="high":
     bee2_port = 7150
     correlator_client_port = 8333
