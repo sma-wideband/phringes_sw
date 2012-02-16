@@ -67,8 +67,16 @@ class DDSClient:
 
     @debug
     def __init__(self, dds_host):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.host = dds_host
-        self.dds_clnt = dDS_clnt.DDSClient(dds_host)
+        self.connect()
+
+    @debug
+    def connect(self):
+        try:
+            self.dds_clnt = dDS_clnt.DDSClient(self.host)
+        except:
+            self.logger.error('Could not connect to DDS!')
 
     @debug
     def reconnect(self):
@@ -128,7 +136,7 @@ class DDSClient:
         ut = 1.002737909*ut_hours
         tmp = int((ut+t0)/24.)
         gmst = ut + t0 - tmp*24.
-       # 
+        # 
         # Finally, find the LST using page 20
         #
         long_tdiff = (longitude*(180/pi))/15.
@@ -638,7 +646,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
     @debug
     def stop_delay_tracker(self):
         self._delay_tracker_stopevent.set()
-        self._delay_tracker_thread.join()
+        if self._delay_tracker_thread.isAlive():
+            self._delay_tracker_thread.join()
 
     @debug
     def stop_phase_tracker(self):
