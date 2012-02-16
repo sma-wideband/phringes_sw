@@ -452,6 +452,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                   14 : self.noise_mode,
                                   15 : self._board,
                                   16 : self.get_reference,
+                                  17 : self.setup_fstopping,
+                                  18 : self.start_fstopping,
+                                  19 : self.stop_fstopping,
                                   36 : self.get_delays,
                                   37 : self.set_delays,
                                   38 : self.get_phases,
@@ -511,6 +514,37 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         self._bee2.regwrite('refant', self._mapping[self._reference_antenna])
         self._bee2.regwrite('syncsel', 2)
 
+    @info
+    def _setup_fringe_stopping(self):
+        with RLock():
+            queues = {}
+            self._dds.query_dds(None)
+            query = self._dds.query.copy()
+            for name, ibob in self._ipas.iteritems():
+                sync_time = time() + 1 # second from now
+                H = self._dds.get_hour_angle(query['rA'],
+                                             query['refLong'],
+                                             sync_time)
+                h_cmd = 'sync_hour_angle {} 0'.format(int(H*10**5))
+                while time()<sync_time:
+                    pass
+                ibob.tinysh(h_cmd)
+                ibob.logger.info(h_cmd)
+                fstop_cmd = 'set_fstop {} 0'.format(int(self._fstop*10**5))
+                ibob.tinysh(fstop_cmd)
+                ibob.logger.info(fstop_cmd)
+            for ant in self._antennas:
+                B = -query['b'][ant] * 10**9
+                C = -query['c'][ant] * 10**9
+                A = self._delay_offsets[ant] + (4000.0 - query['a'][ant] * 10**9)
+                ibob, ibob_input = self._input_ibob_map[self._mapping[ant]]
+                cmd = 'set_delay_triplet {input} {A} {B} {C}'.format(
+                    input=ibob_input, A=int(A*10**5), B=int(B*10**5), C=int(C*10**5)
+                    )
+                queue = ibob.tinysh(cmd)
+                queue.get()
+                ibob.logger.info(cmd)
+                
     @debug
     def _sync_1pps(self):
         with RLock():
@@ -912,6 +946,39 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         Returns the current reference antenna. """
         return pack('!bB', 0, self._reference_antenna)
 
+    @debug
+    def setup_fstopping(self, args):
+        """ inst.setup_fstopping() -> err_code
+        Setup the IPA iBOBs to perform fringe stopping.
+        The only argument is the fringe stopping rate in GHz."""
+        self._fstop = unpack('!f', args)[0]
+        try:
+            self._setup_fringe_stopping()
+            return pack('!b', 0)
+        except:
+            self.logger.error('Error setting up fringe stopping!')
+            return pack('!b', -1)
+
+    @debug
+    def start_fstopping(self, args):
+        """ inst.start_fstopping() -> err_code
+        Enable fringe stopping in the IPA iBOBs."""
+        for name, ibob in self._ipas.iteritems():
+            fstop_cmd = 'set_fstop {} 1'.format(int(self._fstop*10**5))
+            ibob.tinysh(fstop_cmd)
+            ibob.logger.info(fstop_cmd)
+        return pack('!b', 0)
+
+    @debug
+    def stop_fstopping(self, args):
+        """ inst.stop_fstopping() -> err_code
+        Disable fringe stopping in the IPA iBOBs."""
+        for name, ibob in self._ipas.iteritems():
+            fstop_cmd = 'set_fstop {} 0'.format(int(self._fstop*10**5))
+            ibob.tinysh(fstop_cmd)
+            ibob.logger.info(fstop_cmd)
+        return pack('!b', 0)
+
     def get_integration_time(self, args):
         """ inst.get_integration_time() -> err_code
         Overloaded method to get integration time on the BEE2."""
@@ -1085,6 +1152,24 @@ class SubmillimeterArrayClient(BasicInterfaceClient):
         cmd = BYTE.pack(16)
         size, err, resp = self._request(cmd)
         return BYTE.unpack(resp)[0]
+
+    @debug
+    def setup_fstopping(self, fstop):
+        cmd = pack('!Bf', 17, fstop)
+        size, err, resp = self._request(cmd)
+        if err:
+            self.logger.warning("error setting up fringe stopping. "
+                                "is the DDS active?")
+
+    @debug
+    def start_fstopping(self):
+        cmd = BYTE.pack(18)
+        size, err, resp = self._request(cmd)
+
+    @debug
+    def stop_fstopping(self):
+        cmd = BYTE.pack(19)
+        size, err, resp = self._request(cmd)
 
     @debug
     def operations_log(self, level, logger, msg):
