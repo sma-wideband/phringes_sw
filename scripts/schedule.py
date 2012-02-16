@@ -27,8 +27,8 @@ def status_bar(start, stop, current, length=20, time_fmt='%H:%M:%S'):
     total = (stop - start).total_seconds()
     done = (current - start).total_seconds()
     bars = int((done / total) * length)
-    bar_format = '{{0:{0}}}{{1:<{1}}}{{2:{0}}}'.format(time_fmt, length)
-    return bar_format.format(start, '='*(bars-1) + '>', stop)
+    bar_format = '{{0:{0}}}{{1:<{1}}}{{2:{0}}} ({{3:.1f}} sec)'.format(time_fmt, length)
+    return bar_format.format(start, '='*(bars-1) + '>', stop, total-done)
 
 
 def wait_until(dt, refresh=0.1):
@@ -38,6 +38,7 @@ def wait_until(dt, refresh=0.1):
         if (dt-now).microseconds%1000 == 0:
             stdout.write('\r%s' % status_bar(start, dt, now))
             stdout.flush()
+    print '\n'
 
 
 ALL_GAINS = {6: 0.5, 1: 0.5, 2: 0.5, 3: 0.5,
@@ -65,6 +66,8 @@ def scan( scan_number,
         comparison_antenna
         )
     print "%d. SCAN %s ---> %s" %(scan_number, scan_spec, config_str)
+    #rpalo.log_schedule('Starting scan {0} on source {1}'.format(scan_number, source))
+    #rpahi.log_schedule('Starting scan {0} on source {1}'.format(scan_number, source))
     print "SOURCE:", source
     print "STARTS:", start_datetime
     print
@@ -112,9 +115,10 @@ if __name__ == "__main__":
 
     if len(sys.argv) == 2:
         START_AT = int(sys.argv[1])
-    elif len(sys.argv) == 3:
+    elif len(sys.argv) == 4:
         START_AT = int(sys.argv[2])
         SKD_FILE = sys.argv[1]
+        SETUP = sys.argv[3]
         print "READING FROM FILE %s" %SKD_FILE
     else:
         START_AT = 1
@@ -135,7 +139,7 @@ if __name__ == "__main__":
     print "TOTAL TIME %.2f minutes" %(TOTAL.seconds/60.)
     print
 
-    if START_AT == 1:
+    if SETUP == 'yes':
         rpalo.load_walsh_table()
         print rpalo._board('ipa.', 'armsowf')
         rpahi.load_walsh_table()
