@@ -502,7 +502,8 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
         ipa.regwrite('monsel', 2)
         ipa.regwrite('walsh/colsel', 31 | 30*2**8 | 29*2**16 | 28*2**24)
         ipa.regwrite('walsh/syncsel', 1)
-        ipa.regwrite('start_xaui', 1)
+        ipa.regwrite('walsh/sign90', 1)
+        #ipa.regwrite('start_xaui', 1)
 
     @debug
     def _setup_DBE(self):
