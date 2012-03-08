@@ -39,16 +39,24 @@ logger.setLevel(LEVEL)
 logger.addHandler(console)
 
 
-if options.remote:
+if options.remote and options.block=='high':
     server_host = '0.0.0.0'
     listen_host = '0.0.0.0'
-else:
+    server_port = 59999
+    listen_port = 8333
+elif options.remote and options.block=='low':
+    server_host = '0.0.0.0'
+    listen_host = '0.0.0.0'
+    server_port = 59998
+    listen_port = 8332
+elif not options.remote and options.block=='high':
     server_host = '128.171.116.126'
     listen_host = gethostbyname_ex(gethostname())[2][0]
-if options.block=='high':
     server_port = 59999
     listen_port = 8335
-elif options.block=='low':
+elif not options.remote and options.block=='low':
+    server_host = '128.171.116.126'
+    listen_host = gethostbyname_ex(gethostname())[2][0]
     server_port = 59998
     listen_port = 8334
 else:
@@ -89,20 +97,20 @@ root = Tk()
 root.iconify()
 root.wm_title("Correlator Monitor: %s Block" % options.block.capitalize())
 
+plots = Frame(root)
+plots.pack(side=LEFT, fill=BOTH, expand=1)
+
 window = Frame(root)
 window.pack(side=RIGHT, fill=BOTH, expand=1)
 
-plots = Frame(window)
-plots.grid(row=0, column=0, columnspan=3, sticky=(N, S, E, W))#pack(side=LEFT, fill=BOTH, expand=1)
-
 plotting = LabelFrame(window, text='Plotting')
-plotting.grid(row=1, column=0, sticky=(N, S, E, W))#pack(side=TOP, fill=BOTH, expand=1)
+plotting.pack(fill=BOTH, expand=1)
 
 monitor = LabelFrame(window, text='Monitor')
-monitor.grid(row=1, column=1, sticky=(N, S, E, W))#pack(side=BOTTOM, fill=BOTH, expand=1)
+monitor.pack(fill=BOTH, expand=1)
 
 control = LabelFrame(window, text='Control')
-control.grid(row=1, column=2, sticky=(N, S, E, W))#pack(side=BOTTOM, fill=BOTH, expand=1)
+control.pack(fill=BOTH, expand=1)
 
 window.columnconfigure(0, weight=1)
 window.columnconfigure(1, weight=1)
@@ -126,6 +134,8 @@ server.start_correlator()
 f = arange(-7, 8)
 l = arange(-8, 8)
 phase_limits = -pi*1.5, pi*1.5
+hist_xspan = timedelta(minutes=10)
+hist_xpoints = hist_xspan.seconds / server.get_integration_time()
 
 lags = RealTimePlot(master=plots, mode='replace', xlim=[f.min(), f.max()])
 lags.tkwidget.grid(row=0, column=0, sticky=(N, S, E, W))
@@ -133,10 +143,10 @@ lags.tkwidget.grid(row=0, column=0, sticky=(N, S, E, W))
 corr = RealTimePlot(master=plots, mode='replace', ylim=phase_limits, xlim=[f.min(), f.max()])
 corr.tkwidget.grid(row=0, column=1, sticky=(N, S, E, W))
 
-hist = RealTimePlot(master=plots, xspan=timedelta(minutes=10), xpoints=40, ylim=phase_limits)
+hist = RealTimePlot(master=plots, xspan=hist_xspan, xpoints=hist_xpoints, ylim=phase_limits)
 hist.tkwidget.grid(row=1, column=0, sticky=(N, S, E, W))
 
-maghist = RealTimePlot(master=plots, xspan=timedelta(minutes=10), xpoints=40, ylim=[30, 70])
+maghist = RealTimePlot(master=plots, xspan=hist_xspan, xpoints=hist_xpoints, ylim=[-60, 10])
 maghist.tkwidget.grid(row=1, column=1, sticky=(N, S, E, W))
 
 plots.columnconfigure(0, weight=1)
@@ -170,6 +180,9 @@ update_itime.grid(row=1, column=1)
 
 
 show_baseline = {}
+varsq = (3 + 2/3.)**2
+itime = server.get_integration_time()
+norm = (varsq * itime * 1.024*10**9) / 128.
 colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
 def update_plots(widget, baselines, statusbar):
     try:
@@ -192,12 +205,12 @@ def update_plots(widget, baselines, statusbar):
         hist.axes.set_ylabel('Phase (rad)', size=label_size)
         lags.axes.grid()
         lags.axes.set_xlabel('Lag', size=label_size)
-        lags.axes.set_ylabel('Uncalibrated Amplitude', size=label_size)
+        lags.axes.set_ylabel('Normalized Amplitude', size=label_size)
         maghist.axes.grid()
         maghist.axes.set_xlabel('Time (local)', size=label_size)
-        maghist.axes.set_ylabel('Uncalibrated Amplitude (dB)', size=label_size)
+        maghist.axes.set_ylabel('Normalized Amplitude (dB)', size=label_size)
         lags_line = lags.plot(
-            l, abs(lag), '%s-' % colors[current % len(colors)], 
+            l, abs(lag/norm), '%s-' % colors[current % len(colors)], 
             linewidth=1, label=repr(baseline)
             )[0]
         phase_line = corr.plot(
@@ -213,15 +226,18 @@ def update_plots(widget, baselines, statusbar):
             linewidth=1, label=None
             )[0]
         mag_line = maghist.plot(
-            datetime.fromtimestamp(corr_time), 10*log10(abs(lag).max()), 
+            datetime.fromtimestamp(corr_time), 10*log10(abs(lag/norm).max()), 
             '%s-' % colors[current % len(colors)], 
             linewidth=1, label=None
             )[0]
-        hist.figure.autofmt_xdate()
-        maghist.figure.autofmt_xdate()
+        try:
+            hist.figure.autofmt_xdate()
+            maghist.figure.autofmt_xdate()
+        except:
+            pass
         baselines[baseline] = lags_line, phase_line, fit_line, phist_line, mag_line
         statusbar[baseline] = StringVar()
-        Label(master=monitor, textvariable=statusbar[baseline]).grid(columnspan=2)
+        Label(master=monitor, textvariable=statusbar[baseline]).pack(fill=BOTH, expand=1)
         show = BooleanVar()
         show.set(True)
         show_baseline[baseline] = show
@@ -231,11 +247,11 @@ def update_plots(widget, baselines, statusbar):
             line.set_visible(show_baseline[baseline].get())
         corr.axes.legend()
         lags_line, phase_line, fit_line, phist_line, mag_line = baselines[baseline]
-        lags.update_line(lags_line, l, abs(lag))
+        lags.update_line(lags_line, l, abs(lag/norm))
         corr.update_line(phase_line, f, phases)
         corr.update_line(fit_line, f, phase_fit)
         hist.update_line(phist_line, datetime.fromtimestamp(corr_time), phase)
-        maghist.update_line(mag_line, datetime.fromtimestamp(corr_time), 10*log10(abs(lag).max()))
+        maghist.update_line(mag_line, datetime.fromtimestamp(corr_time), 10*log10(abs(lag/norm).max()))
             
     status = statusbar[baseline]
     mean = 100*abs(lag).mean()/(2**31)
