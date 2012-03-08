@@ -3,6 +3,7 @@ Classes for communicating with iBOB hardware over TCP/IP
 """
 
 
+import re
 import logging
 
 from socket import error as SocketError
@@ -61,6 +62,34 @@ class IBOBClient(BasicTCPClient):
             'bramwrite', [device_name, integer], {'loc': location},
             "{0} {loc} {1}", retparser, 0
         )
+
+    @debug
+    def get_phase_offset(self, input):
+        ret_re = '[\r\n]+PO(?P<input>\d)(?:\=)(?P<phase_int>\-*?\d+).\-*(?P<phase_fl>\d+)[\r\n]+'
+        def retparser(buf):
+            m = re.match(ret_re, buf).groupdict()
+            return float(m['phase_int']) + float(m['phase_fl'])*10**-5
+        return self._command('get_phase_offset', [input], {}, '{0}', retparser, None)
+
+    @debug
+    def set_phase_offset(self, input, value):
+        retparser = lambda buf: None
+        return self._command('set_phase_offset', [input, int(value*10**5)], {},
+                             '{0} {1}', retparser, 1)
+
+    @debug
+    def get_delay_offset(self, input):
+        ret_re = '[\r\n]+DO(?P<input>\d)(?:\=)(?P<delay_int>\-*?\d+).\-*(?P<delay_fl>\d+)[\r\n]+'
+        def retparser(buf):
+            m = re.match(ret_re, buf).groupdict()
+            return float(m['delay_int']) + float(m['delay_fl'])*10**-5
+        return self._command('get_delay_offset', [input], {}, '{0}', retparser, None)
+
+    @debug
+    def set_delay_offset(self, input, value):
+        retparser = lambda buf: None
+        return self._command('set_delay_offset', [input, int(value*10**5)], {},
+                             '{0} {1}', retparser, 1)
 
     @debug
     def tinysh(self, command):

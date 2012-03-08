@@ -440,7 +440,9 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
                                 6: [self._ipa1, 2], 7: [self._ipa1, 3]}
         self._param_handlers = {'_thresholds' : self._thresh_handler,
                                 '_phases': self._phase_handler,
+                                '_phase_offsets': self._phase_offset_handler,
                                 '_delays': self._delay_handler,
+                                '_delay_offsets': self._delay_offset_handler,
                                 '_gains': self._gain_handler}
         self._command_set.update({2 : self.get_mapping,
                                   3 : self.set_mapping,
@@ -537,7 +539,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             for ant in self._antennas:
                 B = -query['b'][ant] * 10**9
                 C = -query['c'][ant] * 10**9
-                A = self._delay_offsets[ant] + (4000.0 - query['a'][ant] * 10**9)
+                A = 4000.0 - query['a'][ant] * 10**9
                 ibob, ibob_input = self._input_ibob_map[self._mapping[ant]]
                 cmd = 'set_delay_triplet {input} {A} {B} {C}'.format(
                     input=ibob_input, A=int(A*10**5), B=int(B*10**5), C=int(C*10**5)
@@ -649,7 +651,7 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             with RLock():
                 self.run_delay_tracker(delays)
                 self.run_fringe_stopper(phases)
-            logger.info('|'.join('%d:%.2f'%(a, 4000-d) for a, d in delays.iteritems() if a in self._antennas))
+            logger.info('|'.join('%d:%.2f'%(a, d) for a, d in delays.iteritems() if a in self._antennas))
             #logger.info('|'.join('%d:%.2f'%(a, p) for a, p in phases.iteritems() if a in self._antennas))
             
     @debug
@@ -761,6 +763,14 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             return self._delay_handler('get', antenna, ibob, ibob_input)
 
     @debug
+    def _delay_offset_handler(self, mode, antenna, ibob, ibob_input, value=None):
+        if mode=='get':
+            return ibob.get_delay_offset(ibob_input)
+        elif mode=='set':
+            ibob.set_delay_offset(ibob_input, value)
+            return self._delay_offset_handler('get', antenna, ibob, ibob_input)
+
+    @debug
     def _phase_handler(self, mode, antenna, ibob, ibob_input, value=None):
         deg_per_step = 360./2**12
         regname = 'phase%d' % ibob_input
@@ -772,6 +782,14 @@ class SubmillimeterArrayTCPServer(BasicTCPServer):
             regvalue = round(total/deg_per_step)
             ibob.regwrite(regname, int(regvalue))
             return self._phase_handler('get', antenna, ibob, ibob_input)
+
+    @debug
+    def _phase_offset_handler(self, mode, antenna, ibob, ibob_input, value=None):
+        if mode=='get':
+            return ibob.get_phase_offset(ibob_input)
+        elif mode=='set':
+            ibob.set_phase_offset(ibob_input, value)
+            return self._phase_offset_handler('get', antenna, ibob, ibob_input)
 
     @debug
     def _gain_handler(self, mode, antenna, ibob, ibob_input, value=None):
